@@ -48,3 +48,4 @@ create table if not exists private.password_reset_tokens (
 
 alter table private.password_reset_tokens enable row level security;
 alter table private.password_reset_tokens force row level security;
+

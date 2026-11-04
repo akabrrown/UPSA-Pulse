@@ -12,7 +12,7 @@ import { POST as reportContent } from '@/app/api/reports/route';
 import { GET as getMe, PATCH as patchMe, DELETE as deleteMe } from '@/app/api/me/route';
 import { POST as postDataRequest } from '@/app/api/me/data-request/route';
 import { POST as postConsent } from '@/app/api/consent/route';
-import { POST as postPushSubscribe } from '@/app/api/push/subscribe/route';
+import { GET as getPushVapidConfig, POST as postPushSubscribe } from '@/app/api/push/subscribe/route';
 import { POST as postPushUnsubscribe } from '@/app/api/push/unsubscribe/route';
 import { GET as getAdminQueue } from '@/app/api/admin/queue/route';
 import { POST as postAdminAction } from '@/app/api/admin/actions/route';
@@ -223,6 +223,13 @@ describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
       })
     );
     expect(consentRes.status).toBe(201);
+
+    const vapidConfigRes = await getPushVapidConfig();
+    expect(vapidConfigRes.status).toBe(200);
+    const vapidConfigJson = await vapidConfigRes.json();
+    expect(vapidConfigJson.data.publicKey).toBeTruthy();
+    expect(vapidConfigJson.data.subject).toMatch(/^mailto:/);
+    expect(JSON.stringify(vapidConfigJson)).not.toContain('privateKey');
 
     const pushSub = await postPushSubscribe(
       makeReq('http://localhost:3000/api/push/subscribe', {

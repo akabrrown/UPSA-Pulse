@@ -101,6 +101,18 @@ function formatRelativeTime(isoDate: string): string {
   return `${Math.floor(diffHr / 24)}d`;
 }
 
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const buffer = new ArrayBuffer(rawData.length);
+  const outputArray = new Uint8Array(buffer);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 export function PulseApp() {
   // Navigation & Primary Screen State
   const [activeTab, setActiveTab] = useState<ActiveTab>('feed');
@@ -2630,12 +2642,28 @@ export function PulseApp() {
                   <button
                     type="button"
                     onClick={async () => {
-                      await fetch('/api/push/unsubscribe', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ endpoint: 'https://push.upsapulse.local/sub/1' }),
-                      });
+                      try {
+                        if (
+                          typeof window !== 'undefined' &&
+                          'serviceWorker' in navigator &&
+                          'PushManager' in window
+                        ) {
+                          const reg = await navigator.serviceWorker.ready;
+                          const sub = await reg.pushManager.getSubscription();
+                          if (sub) {
+                            await sub.unsubscribe();
+                            await fetch('/api/push/unsubscribe', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ endpoint: sub.endpoint }),
+                            });
+                          }
+                        }
+                      } catch (err) {
+                        console.error('Error disabling push:', err);
+                      }
                       setPushSubscribed(false);
+                      setComposeStatusToast('Web push alerts turned off.');
                     }}
                     className="min-h-[44px] px-3 text-[13px] font-semibold text-[#A32121] cursor-pointer"
                   >
@@ -2650,16 +2678,61 @@ export function PulseApp() {
                   <button
                     type="button"
                     onClick={async () => {
-                      await fetch('/api/push/subscribe', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          endpoint: 'https://push.upsapulse.local/sub/1',
-                          p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQ',
-                          auth: 'tBHItJI5svbpez7KI4CCXg',
-                        }),
-                      });
-                      setPushSubscribed(true);
+                      try {
+                        if (
+                          typeof window !== 'undefined' &&
+                          'serviceWorker' in navigator &&
+                          'PushManager' in window
+                        ) {
+                          const perm = await Notification.requestPermission();
+                          if (perm !== 'granted') {
+                            setComposeStatusToast('Notification permission was dismissed or denied.');
+                            return;
+                          }
+                          const reg = await navigator.serviceWorker.ready;
+                          const cfgRes = await fetch('/api/push/subscribe');
+                          const cfgJson = await cfgRes.json();
+                          const vapidKey = cfgJson.data?.publicKey;
+
+                          let sub = await reg.pushManager.getSubscription();
+                          if (!sub && vapidKey) {
+                            sub = await reg.pushManager.subscribe({
+                              userVisibleOnly: true,
+                              applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as BufferSource,
+                            });
+                          }
+                          if (sub) {
+                            const subJson = sub.toJSON();
+                            await fetch('/api/push/subscribe', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                endpoint: sub.endpoint,
+                                p256dh: subJson.keys?.p256dh ?? 'p256dh-key',
+                                auth: subJson.keys?.auth ?? 'auth-key',
+                              }),
+                            });
+                            setPushSubscribed(true);
+                            setComposeStatusToast('Web Push notifications enabled for UPSA Pulse!');
+                            return;
+                          }
+                        }
+                        // Fallback simulation for non-HTTPS dev environment
+                        await fetch('/api/push/subscribe', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            endpoint: 'https://push.upsapulse.local/sub/1',
+                            p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQ',
+                            auth: 'tBHItJI5svbpez7KI4CCXg',
+                          }),
+                        });
+                        setPushSubscribed(true);
+                        setComposeStatusToast('Push alerts enabled for campus activity.');
+                      } catch (err) {
+                        console.error('Push subscribe error:', err);
+                        setComposeStatusToast('Push alerts could not be enabled in this environment.');
+                      }
                     }}
                     className="min-h-[44px] px-4 rounded-[8px] bg-[#0B2A5B] text-white text-[14px] font-semibold shrink-0 hover:bg-[#1C4A8F] cursor-pointer"
                   >
