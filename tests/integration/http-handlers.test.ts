@@ -1,0 +1,540 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
+import { resetPulseStoreForTests } from '@/lib/store/pulse-store';
+import { POST as verifyZonePost } from '@/app/api/zone/verify/route';
+import { GET as getFeed } from '@/app/api/feed/route';
+import { POST as createPost } from '@/app/api/posts/route';
+import { GET as getThread, DELETE as deletePost } from '@/app/api/posts/[id]/route';
+import { POST as createReply } from '@/app/api/posts/[id]/replies/route';
+import { POST as markAnswer } from '@/app/api/replies/[id]/answer/route';
+import { PUT as putVote, DELETE as deleteVote } from '@/app/api/votes/route';
+import { POST as reportContent } from '@/app/api/reports/route';
+import { GET as getMe, PATCH as patchMe, DELETE as deleteMe } from '@/app/api/me/route';
+import { POST as postDataRequest } from '@/app/api/me/data-request/route';
+import { POST as postConsent } from '@/app/api/consent/route';
+import { POST as postPushSubscribe } from '@/app/api/push/subscribe/route';
+import { POST as postPushUnsubscribe } from '@/app/api/push/unsubscribe/route';
+import { GET as getAdminQueue } from '@/app/api/admin/queue/route';
+import { POST as postAdminAction } from '@/app/api/admin/actions/route';
+import { GET as getAdminConfig, PUT as putAdminConfig } from '@/app/api/admin/config/route';
+import { POST as postAdminUnmask } from '@/app/api/admin/unmask/route';
+import { POST as postAuthOtp } from '@/app/api/auth/otp/route';
+import { POST as postAppeal, PATCH as patchAppeal } from '@/app/api/appeals/route';
+import { POST as postApproveDevice } from '@/app/api/devices/approve/route';
+import { GET as getAdminLookup } from '@/app/api/admin/lookup/route';
+import { applyModerationActionInStore } from '@/lib/store/pulse-store';
+
+function makeReq(
+  url: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    userId?: string;
+  } = {}
+): NextRequest {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (options.userId) {
+    headers.set('x-pulse-user-id', options.userId);
+  }
+  return new NextRequest(new URL(url, 'http://localhost:3000'), {
+    method: options.method ?? 'GET',
+    headers,
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
+}
+
+describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
+  const efua = '11111111-1111-4111-8111-111111111111';
+  const kojo = '22222222-2222-4222-8222-222222222222';
+  const moderator = '44444444-4444-4444-8444-444444444444';
+
+  beforeEach(() => {
+    resetPulseStoreForTests();
+  });
+
+  it('verifies zone and discards coordinates from response', async () => {
+    const res = await verifyZonePost(
+      makeReq('http://localhost:3000/api/zone/verify', {
+        method: 'POST',
+        userId: efua,
+        body: { lat: 5.6605, lng: -0.1662, accuracy: 25 },
+      })
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.verified).toBe(true);
+    expect(JSON.stringify(json)).not.toContain('5.6605');
+    expect(JSON.stringify(json)).not.toContain('-0.1662');
+  });
+
+  it('completes full post -> reply -> vote -> accept answer -> report -> admin moderate lifecycle via Route Handlers', async () => {
+    // 1. Create an Ask post as Efua
+    const createRes = await createPost(
+      makeReq('http://localhost:3000/api/posts', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          channelId: 1,
+          kind: 'ask',
+          body: 'Which room in the Joshua Alabi block hosts the evening accounting tutorial?',
+        },
+      })
+    );
+    expect(createRes.status).toBe(201);
+    const createdJson = await createRes.json();
+    const postId = createdJson.data.post.id as string;
+
+    // 2. Reply as Kojo
+    const replyRes = await createReply(
+      makeReq(`http://localhost:3000/api/posts/${postId}/replies`, {
+        method: 'POST',
+        userId: kojo,
+        body: { body: 'Room 302 on the third floor, starting at 5:30 PM.' },
+      }),
+      { params: Promise.resolve({ id: postId }) }
+    );
+    expect(replyRes.status).toBe(201);
+    const replyJson = await replyRes.json();
+    const replyId = replyJson.data.reply.id as string;
+    expect(replyJson.data.reply.aliasNo).toBe(1);
+
+    // 3. Upvote post as Kojo and then remove vote
+    const voteRes = await putVote(
+      makeReq('http://localhost:3000/api/votes', {
+        method: 'PUT',
+        userId: kojo,
+        body: { targetType: 'post', targetId: postId, value: 1 },
+      })
+    );
+    expect(voteRes.status).toBe(200);
+    expect((await voteRes.json()).data.score).toBe(1);
+
+    const removeVoteRes = await deleteVote(
+      makeReq('http://localhost:3000/api/votes', {
+        method: 'DELETE',
+        userId: kojo,
+        body: { targetType: 'post', targetId: postId, value: 0 },
+      })
+    );
+    expect(removeVoteRes.status).toBe(200);
+    expect((await removeVoteRes.json()).data.score).toBe(0);
+
+    // 4. Mark answer as Efua
+    const ansRes = await markAnswer(
+      makeReq(`http://localhost:3000/api/replies/${replyId}/answer`, {
+        method: 'POST',
+        userId: efua,
+      }),
+      { params: Promise.resolve({ id: replyId }) }
+    );
+    expect(ansRes.status).toBe(200);
+
+    // 5. Read thread and feed — confirm zero author_id leak
+    const threadRes = await getThread(
+      makeReq(`http://localhost:3000/api/posts/${postId}`, { userId: efua }),
+      { params: Promise.resolve({ id: postId }) }
+    );
+    expect(threadRes.status).toBe(200);
+    const threadText = JSON.stringify(await threadRes.json());
+    expect(threadText).not.toContain('author_id');
+    expect(threadText).not.toContain('authorId');
+
+    const feedRes = await getFeed(
+      makeReq('http://localhost:3000/api/feed?sort=hot', { userId: efua })
+    );
+    expect(feedRes.status).toBe(200);
+
+    // 6. Report post and moderate via Admin Queue
+    const repRes = await reportContent(
+      makeReq('http://localhost:3000/api/reports', {
+        method: 'POST',
+        userId: kojo,
+        body: { targetType: 'post', targetId: postId, reason: 'spam', note: 'Test report' },
+      })
+    );
+    expect(repRes.status).toBe(201);
+
+    const queueRes = await getAdminQueue(
+      makeReq('http://localhost:3000/api/admin/queue', { userId: moderator })
+    );
+    expect(queueRes.status).toBe(200);
+    const queueJson = await queueRes.json();
+    expect(queueJson.data.items.some((i: { targetId: string }) => i.targetId === postId)).toBe(true);
+
+    const modActionRes = await postAdminAction(
+      makeReq('http://localhost:3000/api/admin/actions', {
+        method: 'POST',
+        userId: moderator,
+        body: {
+          targetType: 'post',
+          targetId: postId,
+          action: 'restore',
+          reason: 'Verified legitimate academic question',
+        },
+      })
+    );
+    expect(modActionRes.status).toBe(201);
+
+    // 7. Delete own post as Efua
+    const delPostRes = await deletePost(
+      makeReq(`http://localhost:3000/api/posts/${postId}`, {
+        method: 'DELETE',
+        userId: efua,
+      }),
+      { params: Promise.resolve({ id: postId }) }
+    );
+    expect(delPostRes.status).toBe(200);
+  });
+
+  it('handles auth OTP, consent, push subscription, data request, admin config, unmask gate, and account deletion routes', async () => {
+    const otpReq = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'request_otp',
+          email: 'newstudent@st.upsa.edu.gh',
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        },
+      })
+    );
+    expect(otpReq.status).toBe(200);
+
+    const otpVerify = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          email: 'newstudent@st.upsa.edu.gh',
+          otp: '123456',
+          deviceToken: 'device-token-123456',
+        },
+      })
+    );
+    expect(otpVerify.status).toBe(200);
+
+    const consentRes = await postConsent(
+      makeReq('http://localhost:3000/api/consent', {
+        method: 'POST',
+        userId: efua,
+        body: { document: 'terms', version: '1.0' },
+      })
+    );
+    expect(consentRes.status).toBe(201);
+
+    const pushSub = await postPushSubscribe(
+      makeReq('http://localhost:3000/api/push/subscribe', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          endpoint: 'https://push.upsapulse.local/sub/99',
+          p256dh: 'p256dh-key',
+          auth: 'auth-key',
+        },
+      })
+    );
+    expect(pushSub.status).toBe(201);
+
+    const pushUnsub = await postPushUnsubscribe(
+      makeReq('http://localhost:3000/api/push/unsubscribe', {
+        method: 'POST',
+        userId: efua,
+        body: { endpoint: 'https://push.upsapulse.local/sub/99' },
+      })
+    );
+    expect(pushUnsub.status).toBe(200);
+
+    const dataReq = await postDataRequest(
+      makeReq('http://localhost:3000/api/me/data-request', {
+        method: 'POST',
+        userId: efua,
+        body: { type: 'access', details: 'Requesting export of my profile and consent logs' },
+      })
+    );
+    expect(dataReq.status).toBe(201);
+
+    const meGet = await getMe(makeReq('http://localhost:3000/api/me', { userId: efua }));
+    expect(meGet.status).toBe(200);
+
+    const mePatch = await patchMe(
+      makeReq('http://localhost:3000/api/me', { method: 'PATCH', userId: efua })
+    );
+    expect(mePatch.status).toBe(200);
+
+    const cfgGet = await getAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', { userId: moderator })
+    );
+    expect(cfgGet.status).toBe(200);
+
+    const cfgPut = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          section: 'keyword_rule',
+          payload: { pattern: 'leaked paper', matchType: 'contains', category: 'exam_leak' },
+        },
+      })
+    );
+    expect(cfgPut.status).toBe(200);
+
+    const unmaskBlocked = await postAdminUnmask(
+      makeReq('http://localhost:3000/api/admin/unmask', {
+        method: 'POST',
+        userId: '55555555-5555-4555-8555-555555555555',
+        body: {
+          action: 'request',
+          postId: 'a0000000-0000-4000-8000-000000000001',
+          basis: 'credible_threat',
+          reference: 'REF-001',
+          reason: 'Testing disabled gate by default',
+        },
+      })
+    );
+    expect(unmaskBlocked.status).toBe(403);
+
+    const meDel = await deleteMe(
+      makeReq('http://localhost:3000/api/me', {
+        method: 'DELETE',
+        userId: efua,
+        body: { confirmationText: 'DELETE', otp: '654321' },
+      })
+    );
+    expect(meDel.status).toBe(200);
+  });
+
+  it('verifies appeals two-moderator rule (F15), device approval (F2), and case lookup without email leak (ADMIN-1)', async () => {
+    const moderatorB = '55555555-5555-4555-8555-555555555555';
+    const action = applyModerationActionInStore(moderatorB, {
+      targetType: 'post',
+      targetId: 'a0000000-0000-4000-8000-000000000001',
+      action: 'suspend',
+      reason: 'Suspended for repeated spam links',
+      suspendDays: 7,
+    });
+
+    const appealCreate = await postAppeal(
+      makeReq('http://localhost:3000/api/appeals', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          originalActionId: action.id,
+          message: 'It was an official UPSA SRC study group link, not commercial spam.',
+        },
+      })
+    );
+    expect(appealCreate.status).toBe(201);
+    const appealJson = await appealCreate.json();
+
+    // Moderator B tries to review their own action -> 403 same_moderator_cannot_review_appeal
+    const selfReview = await patchAppeal(
+      makeReq('http://localhost:3000/api/appeals', {
+        method: 'PATCH',
+        userId: moderatorB,
+        body: {
+          appealId: appealJson.data.id,
+          decision: 'rejected',
+          note: 'Reviewing my own action',
+        },
+      })
+    );
+    expect(selfReview.status).toBe(403);
+    expect((await selfReview.json()).error.code).toBe('same_moderator_cannot_review_appeal');
+
+    // Distinct Moderator A reviews and upholds -> 200
+    const modAReview = await patchAppeal(
+      makeReq('http://localhost:3000/api/appeals', {
+        method: 'PATCH',
+        userId: moderator,
+        body: {
+          appealId: appealJson.data.id,
+          decision: 'upheld',
+          note: 'Verified official study group link; restriction lifted.',
+        },
+      })
+    );
+    expect(modAReview.status).toBe(200);
+    expect((await modAReview.json()).data.status).toBe('upheld');
+
+    // Approve pending device (Flow F2)
+    const devApprove = await postApproveDevice(
+      makeReq('http://localhost:3000/api/devices/approve', {
+        method: 'POST',
+        userId: efua,
+        body: { rawDeviceToken: 'upsa-new-device-token-2026-verified' },
+      })
+    );
+    expect(devApprove.status).toBe(200);
+    expect((await devApprove.json()).data.status).toBe('trusted');
+
+    // Case lookup by postId and aliasNo (ADMIN-1)
+    const lookupRes = await getAdminLookup(
+      makeReq(
+        'http://localhost:3000/api/admin/lookup?postId=a0000000-0000-4000-8000-000000000001&aliasNo=0',
+        { userId: moderator }
+      )
+    );
+    expect(lookupRes.status).toBe(200);
+    const lookupJson = await lookupRes.json();
+    expect(lookupJson.data.found).toBe(true);
+    expect(lookupJson.data.email).toBeUndefined();
+  });
+
+  it('creates new campus channels and updates channel active/ask/sortOrder flags via PUT /api/admin/config (ADMIN-1)', async () => {
+    const createChanRes = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          section: 'channel',
+          payload: {
+            name: 'Internships & Careers',
+            slug: 'careers',
+            description: 'Internship openings, CV reviews, and NSS placements',
+            icon: 'briefcase',
+            allowsAsk: true,
+            isActive: true,
+          },
+        },
+      })
+    );
+    expect(createChanRes.status).toBe(200);
+    const createdJson = await createChanRes.json();
+    const careersChan = createdJson.data.channels.find(
+      (c: { slug: string }) => c.slug === 'careers'
+    );
+    expect(careersChan).toBeDefined();
+    expect(careersChan.name).toBe('Internships & Careers');
+    expect(careersChan.allowsAsk).toBe(true);
+
+    // Toggle allowsAsk, isActive, and sortOrder on the newly created channel
+    const toggleChanRes = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          section: 'channel',
+          payload: {
+            id: careersChan.id,
+            allowsAsk: false,
+            isActive: false,
+            sortOrder: 1,
+          },
+        },
+      })
+    );
+    expect(toggleChanRes.status).toBe(200);
+    const toggledJson = await toggleChanRes.json();
+    const updatedChan = toggledJson.data.channels.find(
+      (c: { id: number }) => c.id === careersChan.id
+    );
+    expect(updatedChan.allowsAsk).toBe(false);
+    expect(updatedChan.isActive).toBe(false);
+    expect(updatedChan.sortOrder).toBe(1);
+  });
+
+  it('verifies exact GeoJSON polygons for Campus, Hostel A, Hostel B, Hostel C, filters feed by place or All 4, and adds a new GeoJSON place via Admin', async () => {
+    // 1. Verify point inside Hostel C GeoJSON polygon (-0.1675, 5.6575)
+    const hostelCVerify = await verifyZonePost(
+      makeReq('http://localhost:3000/api/zone/verify', {
+        method: 'POST',
+        userId: kojo,
+        body: { lat: 5.6575, lng: -0.1675, accuracy: 25 },
+      })
+    );
+    expect(hostelCVerify.status).toBe(200);
+    const hostelCJson = await hostelCVerify.json();
+    expect(hostelCJson.data.verified).toBe(true);
+    expect(hostelCJson.data.zoneName).toBe('Hostel C');
+
+    // 2. Post to Hostel C (zoneId = 4) and Hostel A (zoneId = 2)
+    const postHostelC = await createPost(
+      makeReq('http://localhost:3000/api/posts', {
+        method: 'POST',
+        userId: kojo,
+        body: {
+          zoneId: 4,
+          channelId: 2,
+          kind: 'post',
+          body: 'Water tanker just arrived at Hostel C tank stand!',
+        },
+      })
+    );
+    expect(postHostelC.status).toBe(201);
+
+    const postHostelA = await createPost(
+      makeReq('http://localhost:3000/api/posts', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          zoneId: 2,
+          channelId: 2,
+          kind: 'post',
+          body: 'Hostel A common room study group starting at 8pm.',
+        },
+      })
+    );
+    expect(postHostelA.status).toBe(201);
+
+    // 3. Query Hostel C feed (zoneId=4) vs All 4 feed (no zoneId)
+    const feedHostelCRes = await getFeed(
+      makeReq('http://localhost:3000/api/feed?sort=new&zoneId=4', { userId: kojo })
+    );
+    const feedHostelCJson = await feedHostelCRes.json();
+    expect(feedHostelCJson.data.items.every((p: { zoneId: number }) => p.zoneId === 4)).toBe(true);
+    expect(
+      feedHostelCJson.data.items.some((p: { body: string }) => p.body.includes('Hostel C tank'))
+    ).toBe(true);
+
+    const feedAllRes = await getFeed(
+      makeReq('http://localhost:3000/api/feed?sort=new', { userId: kojo })
+    );
+    const feedAllJson = await feedAllRes.json();
+    expect(feedAllJson.data.zones.length).toBeGreaterThanOrEqual(4);
+    expect(
+      feedAllJson.data.items.some((p: { body: string }) => p.body.includes('Hostel C tank'))
+    ).toBe(true);
+    expect(
+      feedAllJson.data.items.some((p: { body: string }) => p.body.includes('Hostel A common room'))
+    ).toBe(true);
+
+    // 4. Add a new place via Admin GeoJSON upload
+    const addPlaceRes = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          section: 'zone',
+          payload: {
+            name: 'Hostel D Annex',
+            maxAccuracyMeters: 150,
+            geojson: JSON.stringify({
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'Polygon',
+                coordinates: [
+                  [
+                    [-0.169, 5.661],
+                    [-0.168, 5.661],
+                    [-0.168, 5.66],
+                    [-0.169, 5.66],
+                    [-0.169, 5.661],
+                  ],
+                ],
+              },
+            }),
+          },
+        },
+      })
+    );
+    expect(addPlaceRes.status).toBe(200);
+    const addPlaceJson = await addPlaceRes.json();
+    expect(
+      addPlaceJson.data.zones.some((z: { name: string }) => z.name === 'Hostel D Annex')
+    ).toBe(true);
+  });
+});
+

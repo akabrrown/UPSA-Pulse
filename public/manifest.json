@@ -1,0 +1,19 @@
+{
+  "name": "UPSA Pulse",
+  "short_name": "Pulse",
+  "description": "Location-gated, pseudonymous campus feed for verified UPSA students",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F8FB",
+  "theme_color": "#0B2A5B",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

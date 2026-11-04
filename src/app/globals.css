@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+:root {
+  /* Primitive tokens — Design Brief Section 2.1 */
+  --navy-950: #071C3D;
+  --navy-900: #0B2A5B;
+  --navy-700: #1C4A8F;
+  --navy-100: #DCE6F5;
+  --navy-50: #EEF2F8;
+  --gold-500: #D9A21B;
+  --gold-700: #8A6200;
+  --gold-100: #FBF3DC;
+  --ink: #1B2433;
+  --slate-600: #5B6678;
+  --line: #D5DAE3;
+  --bg: #F7F8FB;
+  --white: #FFFFFF;
+  --danger: #A32121;
+  --success: #1F7A4D;
+
+  /* Semantic tokens (Light mode) — Design Brief Section 2.2 */
+  --surface-app: var(--bg);
+  --surface-card: var(--white);
+  --surface-subtle: var(--navy-50);
+  --surface-chip: var(--navy-100);
+  --surface-callout: var(--gold-100);
+  --text-primary: var(--ink);
+  --text-secondary: var(--slate-600);
+  --text-heading: var(--navy-900);
+  --text-gold-safe: var(--gold-700);
+  --brand-primary: var(--navy-900);
+  --brand-primary-hover: var(--navy-700);
+  --accent-fill: var(--gold-500);
+  --accent-text: var(--navy-900);
+  --border-color: var(--line);
+  --focus-ring: var(--gold-500);
+  --focus-offset: var(--navy-900);
+}
+
+.dark {
+  /* Semantic tokens (Dark mode) — Design Brief Section 2.2 */
+  --surface-app: #0C1424;
+  --surface-card: #111A2B;
+  --surface-subtle: #071C3D;
+  --surface-chip: #1C3154;
+  --surface-callout: #2B2310;
+  --text-primary: #E8ECF4;
+  --text-secondary: #9AA6BA;
+  --text-heading: #E8ECF4;
+  --text-gold-safe: #E8B93C;
+  --brand-primary: #1C4A8F;
+  --brand-primary-hover: #275CB0;
+  --accent-fill: #E8B93C;
+  --accent-text: #071C3D;
+  --border-color: #243350;
+  --focus-ring: #E8B93C;
+  --focus-offset: #0C1424;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background-color: var(--surface-app);
+  color: var(--text-primary);
+  font-family: var(--font-figtree), system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible gold focus ring with 2px navy offset — Design Brief Section 2.2 & 8 */
+*:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Vote press 120ms scale and fill change — Design Brief Section 7 */
+.vote-btn {
+  transition: transform 120ms ease-out, background-color 120ms ease-out, color 120ms ease-out;
+}
+.vote-btn:active {
+  transform: scale(0.94);
+}
+
+/* New-posts pill slides in once, no bounce — Design Brief Section 7 */
+@keyframes slideInOnce {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.new-posts-pill {
+  animation: slideInOnce 160ms ease-out forwards;
+}
+
+/* Respect prefers-reduced-motion by removing all transforms — Design Brief Section 7 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+

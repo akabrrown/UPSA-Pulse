@@ -1,0 +1,219 @@
+openapi: 3.1.0
+info:
+  title: UPSA Pulse API
+  version: 1.0.0
+  description: >-
+    Contract-first HTTP API specification for UPSA Pulse — a location-gated,
+    pseudonymous campus feed for verified UPSA students (18+).
+servers:
+  - url: http://localhost:3000
+    description: Local / Development
+paths:
+  /api/auth/otp:
+    post:
+      summary: Request or verify a 6-digit UPSA email OTP and bind a single trusted device
+      operationId: authOtp
+      responses:
+        '200':
+          description: OTP sent or verified with trusted/pending device status
+        '400':
+          description: Validation or disallowed email domain error
+  /api/devices/approve:
+    post:
+      summary: Approve a pending device and revoke any previous trusted device (Flow F2)
+      operationId: approveDevice
+      responses:
+        '200':
+          description: Device promoted to trusted and old device revoked
+  /api/zone/verify:
+    post:
+      summary: Verify caller GPS coordinates against the UPSA campus polygon (Coordinates never stored)
+      operationId: verifyZone
+      responses:
+        '200':
+          description: Zone verified for 15 minutes
+        '403':
+          description: Outside zone or poor GPS accuracy (>150m)
+  /api/feed:
+    get:
+      summary: List paginated campus posts in the caller's verified zone
+      operationId: getFeed
+      responses:
+        '200':
+          description: Paginated feed items, channels, and zone name
+        '403':
+          description: Zone not verified
+  /api/posts:
+    post:
+      summary: Create a campus post or Ask (up to 500 chars) with pre-screen and rate limits
+      operationId: createPost
+      responses:
+        '201':
+          description: Post published or held for review
+        '403':
+          description: Zone expired or account restricted
+        '429':
+          description: Rate limit exceeded (5 posts/hour)
+  /api/posts/{id}:
+    get:
+      summary: Fetch a thread and its flat chronological replies with per-thread aliases
+      operationId: getThread
+      responses:
+        '200':
+          description: Thread post and replies
+        '404':
+          description: Post unavailable
+    delete:
+      summary: Soft-delete caller's own post
+      operationId: deleteOwnPost
+      responses:
+        '200':
+          description: Post removed
+  /api/posts/{id}/replies:
+    post:
+      summary: Create a flat reply (up to 300 chars) with deterministic per-thread alias assignment
+      operationId: createReply
+      responses:
+        '201':
+          description: Reply created
+        '429':
+          description: Rate limit exceeded (30 replies/hour)
+  /api/replies/{id}/answer:
+    post:
+      summary: Mark or replace the accepted answer on an Ask thread (OP only)
+      operationId: markAnswer
+      responses:
+        '200':
+          description: Accepted answer updated
+        '403':
+          description: Caller is not the OP
+  /api/votes:
+    put:
+      summary: Cast or flip an upvote (+1) or downvote (-1) on a post or reply
+      operationId: castVote
+      responses:
+        '200':
+          description: Updated score and auto-hide status (-5 threshold)
+        '400':
+          description: Own content voting blocked
+    delete:
+      summary: Clear caller's vote (0) on a post or reply
+      operationId: clearVote
+      responses:
+        '200':
+          description: Vote cleared
+  /api/reports:
+    post:
+      summary: Report a post or reply with reason and optional 300-char note
+      operationId: reportContent
+      responses:
+        '201':
+          description: Report recorded; auto-hidden at 2 P1 or 5 total distinct reporters
+  /api/appeals:
+    post:
+      summary: Submit one appeal for a moderation action (Flow F15)
+      operationId: submitAppeal
+      responses:
+        '201':
+          description: Appeal submitted
+    patch:
+      summary: Review and decide an appeal (Enforces two-moderator rule)
+      operationId: decideAppeal
+      responses:
+        '200':
+          description: Appeal upheld or rejected
+        '403':
+          description: Same moderator cannot review their own action
+  /api/consent:
+    post:
+      summary: Record acceptance of a legal document version (Flow F14)
+      operationId: recordConsent
+      responses:
+        '201':
+          description: Consent recorded in private.consents
+  /api/me:
+    get:
+      summary: Get caller's private profile summary, karma, pending legal updates, and alerts
+      operationId: getMe
+      responses:
+        '200':
+          description: Private profile summary and notifications
+    patch:
+      summary: Mark all in-app notifications as read
+      operationId: markAlertsRead
+      responses:
+        '200':
+          description: Notifications marked read
+    delete:
+      summary: Permanently delete caller's account while unlinking past posts (Flow F12)
+      operationId: deleteAccount
+      responses:
+        '200':
+          description: Account deleted and recorded in private.deletion_log
+  /api/me/data-request:
+    post:
+      summary: Submit a Ghana Data Protection Act (Act 843) access or correction request (Flow F13)
+      operationId: submitDataRequest
+      responses:
+        '201':
+          description: Request logged with 30-day SLA
+  /api/push/subscribe:
+    post:
+      summary: Save a Web Push subscription endpoint and keys (Flow F11)
+      operationId: subscribePush
+      responses:
+        '201':
+          description: Subscription saved
+  /api/push/unsubscribe:
+    post:
+      summary: Remove a Web Push subscription endpoint
+      operationId: unsubscribePush
+      responses:
+        '200':
+          description: Subscription removed
+  /api/admin/queue:
+    get:
+      summary: List moderation queue ordered by P1 priority first, then oldest (Aliases only)
+      operationId: getModerationQueue
+      responses:
+        '200':
+          description: Moderation queue items without author email or user_id
+  /api/admin/actions:
+    post:
+      summary: Apply a moderation action with mandatory reason >= 5 chars and conflict-of-interest check
+      operationId: applyModerationAction
+      responses:
+        '200':
+          description: Action applied and logged to private.moderation_actions
+        '403':
+          description: Conflict of interest or insufficient privileges
+  /api/admin/lookup:
+    get:
+      summary: Lookup account standing and prior actions by post ID and thread alias (No email exposed)
+      operationId: lookupCase
+      responses:
+        '200':
+          description: Case summary for post/alias
+  /api/admin/config:
+    get:
+      summary: Get zones, channels, keyword rules, allowed domains, and legal document versions
+      operationId: getAdminConfig
+      responses:
+        '200':
+          description: Admin configuration snapshot
+    put:
+      summary: Update zone max accuracy, channel toggles, keyword hold rules, or allowed domains
+      operationId: updateAdminConfig
+      responses:
+        '200':
+          description: Updated configuration and append-only audit log entry
+  /api/admin/unmask:
+    post:
+      summary: Two-person author unmask request/approval gate (Disabled unless UNMASK_ENABLED=true)
+      operationId: unmaskAction
+      responses:
+        '200':
+          description: Unmask request created, approved by second holder, or rejected
+        '403':
+          description: Disabled by policy or two-person rule violation
+

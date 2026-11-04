@@ -1,0 +1,39 @@
+import { NextRequest } from 'next/server';
+import { createReplySchema } from '@/lib/validation/schemas';
+import { dbCreateReply } from '@/lib/db/postgres';
+import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
+
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await context.params;
+    const body = await req.json();
+    const parsed = createReplySchema.safeParse(body);
+    if (!parsed.success) {
+      return apiError(
+        'invalid_input',
+        parsed.error.issues[0]?.message ?? 'Reply must be between 1 and 300 characters.',
+        400
+      );
+    }
+
+    const userId = getAuthenticatedUserId(req);
+    const reply = await dbCreateReply(userId, id, parsed.data.body);
+
+    return apiSuccess(
+      {
+        reply,
+        heldMessage:
+          reply.status === 'held'
+            ? 'Your reply is being checked. It will appear soon if it follows the guidelines.'
+            : null,
+        showSupportCard: reply.showSupportCard,
+      },
+      201
+    );
+  } catch (err) {
+    return mapDomainErrorToResponse(err);
+  }
+}
