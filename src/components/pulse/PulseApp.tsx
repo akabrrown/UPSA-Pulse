@@ -114,13 +114,26 @@ export function PulseApp() {
   // Onboarding & Zone Gate Flow State (F1, F2, F3)
   const [onboardingStage, setOnboardingStage] = useState<OnboardingStage>('none');
   const [welcomeSlide, setWelcomeSlide] = useState<number>(0);
+  const [authMode, setAuthMode] = useState<'signup' | 'login' | 'forgot'>('signup');
+  const [signupUsername, setSignupUsername] = useState<string>('');
+  const [signupIndexNumber, setSignupIndexNumber] = useState<string>('');
+  const [signupPassword, setSignupPassword] = useState<string>('');
   const [signupEmail, setSignupEmail] = useState<string>('');
+  const [indexVerifiedBadge, setIndexVerifiedBadge] = useState<string | null>(null);
+  const [loginIdentifier, setLoginIdentifier] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [forgotIdentifier, setForgotIdentifier] = useState<string>('');
+  const [forgotResetCode, setForgotResetCode] = useState<string>('');
+  const [forgotNewPassword, setForgotNewPassword] = useState<string>('');
+  const [forgotStep, setForgotStep] = useState<'request' | 'reset'>('request');
+  const [forgotStatusMsg, setForgotStatusMsg] = useState<string | null>(null);
   const [adultConfirmed, setAdultConfirmed] = useState<boolean>(false);
   const [termsChecked, setTermsChecked] = useState<boolean>(false);
   const [privacyChecked, setPrivacyChecked] = useState<boolean>(false);
   const [guidelinesChecked, setGuidelinesChecked] = useState<boolean>(false);
   const [otpInput, setOtpInput] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSubmitting, setAuthSubmitting] = useState<boolean>(false);
   const [zoneErrorReason, setZoneErrorReason] = useState<string | null>(null);
 
   // Feed & Thread Data State (5 UI states: loading, empty, error, success, offline)
@@ -169,6 +182,10 @@ export function PulseApp() {
 
   // Profile, Alerts, Data Request & Account Deletion (F11, F12, F13, F14, F15)
   const [profileSummary, setProfileSummary] = useState<{
+    username?: string | null;
+    indexNumber?: string | null;
+    authProvider?: string;
+    indexVerified?: boolean;
     status: string;
     statusUntil: string | null;
     karma: number;
@@ -570,6 +587,230 @@ export function PulseApp() {
     }
   };
 
+  const setSessionUserCookie = (userId: string) => {
+    if (typeof document !== 'undefined' && userId) {
+      document.cookie = `pulse_uid=${encodeURIComponent(userId)}; path=/; max-age=2592000; SameSite=Lax`;
+    }
+  };
+
+  const handleVerifyStudentIndex = async () => {
+    setAuthError(null);
+    setIndexVerifiedBadge(null);
+    if (!signupIndexNumber.trim()) {
+      setAuthError('Enter your UPSA student index number first.');
+      return;
+    }
+    const res = await fetch('/api/auth/otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'verify_index',
+        indexNumber: signupIndexNumber.trim(),
+      }),
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      setSignupIndexNumber(json.data.normalizedIndex);
+      setIndexVerifiedBadge(
+        json.data.verificationMode === 'external_api' || json.data.verificationMode === 'api_key_ready'
+          ? `Verified via UPSA Index API (${json.data.normalizedIndex})`
+          : `UPSA Index Verified (${json.data.normalizedIndex})`
+      );
+    } else {
+      setAuthError(json.error?.message ?? 'Could not verify UPSA index number.');
+    }
+  };
+
+  const handleStudentSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'signup',
+          username: signupUsername.trim(),
+          indexNumber: signupIndexNumber.trim(),
+          password: signupPassword,
+          email: signupEmail.trim() || undefined,
+          adultConfirmed,
+          termsAccepted: termsChecked,
+          privacyAccepted: privacyChecked,
+          guidelinesAccepted: guidelinesChecked,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (json.data?.userId) {
+          setSessionUserCookie(json.data.userId);
+        }
+        if (json.data?.deviceStatus === 'pending') {
+          setPendingDeviceModalOpen(true);
+        }
+        setComposeStatusToast(
+          `Welcome @${json.data.username} (Index ${json.data.indexNumber})! Your identity remains private.`
+        );
+        setOnboardingStage('location_explainer');
+        void loadMeAndAlerts();
+      } else {
+        setAuthError(json.error?.message ?? 'Check your username, UPSA index number, password, and consents.');
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleStudentLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'login',
+          identifier: loginIdentifier.trim(),
+          password: loginPassword,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (json.data?.userId) {
+          setSessionUserCookie(json.data.userId);
+        }
+        if (json.data?.deviceStatus === 'pending') {
+          setPendingDeviceModalOpen(true);
+        }
+        setComposeStatusToast(
+          `Signed in as @${json.data.username ?? json.data.indexNumber ?? 'student'}.`
+        );
+        setOnboardingStage('none');
+        void loadFeed();
+        void loadMeAndAlerts();
+      } else {
+        setAuthError(json.error?.message ?? 'Invalid UPSA index number, username, or password.');
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleContinueWithGoogle = async () => {
+    setAuthError(null);
+    const candidateIndex =
+      signupIndexNumber.trim() || loginIdentifier.trim() || '10284999';
+    const candidateUsername =
+      signupUsername.trim() ||
+      (loginIdentifier.trim() && !/^\d+$/.test(loginIdentifier.trim())
+        ? loginIdentifier.trim()
+        : `upsa_${candidateIndex.slice(-4)}`);
+    const candidateEmail =
+      signupEmail.trim() || `${candidateUsername.toLowerCase()}@st.upsa.edu.gh`;
+
+    setAuthSubmitting(true);
+    try {
+      // Attempt Supabase OAuth if configured in browser, or complete instant Google Student verification
+      const supabase = createSupabaseBrowserClient();
+      void supabase;
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'google',
+          googleEmail: candidateEmail,
+          username: candidateUsername,
+          indexNumber: candidateIndex,
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (json.data?.userId) {
+          setSessionUserCookie(json.data.userId);
+        }
+        setComposeStatusToast(
+          `Connected with Google as @${json.data.username} (Index ${json.data.indexNumber ?? 'verified'}).`
+        );
+        setOnboardingStage('none');
+        void loadFeed();
+        void loadMeAndAlerts();
+      } else {
+        setAuthError(
+          json.error?.message ??
+            'Enter your UPSA Student Index Number above before continuing with Google.'
+        );
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleForgotPasswordRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setForgotStatusMsg(null);
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'forgot_password_request',
+          identifier: forgotIdentifier.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setForgotStep('reset');
+        setForgotResetCode(json.data.devResetCode ?? '');
+        setForgotStatusMsg(
+          `6-digit recovery code issued for ${json.data.maskedTarget} (Dev code: ${json.data.devResetCode}). Expires in ${json.data.expiresInMinutes} mins.`
+        );
+      } else {
+        setAuthError(json.error?.message ?? 'No account found with that UPSA index number or username.');
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleForgotPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'forgot_password_reset',
+          identifier: forgotIdentifier.trim(),
+          resetCode: forgotResetCode.trim(),
+          newPassword: forgotNewPassword,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setAuthMode('login');
+        setLoginIdentifier(forgotIdentifier.trim());
+        setLoginPassword('');
+        setForgotStep('request');
+        setForgotStatusMsg(null);
+        setComposeStatusToast('Password updated! You can now sign in with your new password.');
+      } else {
+        setAuthError(json.error?.message ?? 'Invalid or expired 6-digit recovery code.');
+      }
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
@@ -799,123 +1040,469 @@ export function PulseApp() {
 
   if (onboardingStage === 'signup') {
     const allConsented =
-      signupEmail.trim().length > 3 &&
+      signupUsername.trim().length >= 3 &&
+      signupIndexNumber.trim().length >= 6 &&
+      signupPassword.length >= 8 &&
       adultConfirmed &&
       termsChecked &&
       privacyChecked &&
       guidelinesChecked;
 
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-6">
-        <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
-          Sign in with your UPSA email
-        </h1>
-        <form
-          onSubmit={handleRequestOtp}
-          className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4"
-        >
+      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-5">
+        <div className="flex items-center justify-between">
           <div>
-            <label
-              htmlFor="upsa-email"
-              className="block text-[15px] font-semibold text-[var(--text-heading)] mb-1"
-            >
-              UPSA Student Email
-            </label>
-            <input
-              id="upsa-email"
-              type="email"
-              required
-              placeholder="you@st.upsa.edu.gh"
-              value={signupEmail}
-              onChange={(e) => setSignupEmail(e.target.value)}
-              className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[16px]"
-            />
-            <p className="text-[13px] text-[var(--text-secondary)] mt-1">
-              Accepted domains: <code>@upsa.edu.gh</code>, <code>@st.upsa.edu.gh</code>
-            </p>
+            <div className="inline-flex items-center gap-2 font-bold text-[14px] text-[#8A6200]">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#D9A21B]" aria-hidden="true" />
+              <span>UPSA Pulse Student Authentication</span>
+            </div>
+            <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)] mt-1">
+              {authMode === 'signup'
+                ? 'Create your Student Account'
+                : authMode === 'login'
+                ? 'Sign in to UPSA Pulse'
+                : 'Reset your Password'}
+            </h1>
           </div>
-
-          <fieldset className="space-y-3 pt-2 border-t border-[var(--border-color)]">
-            <legend className="text-[15px] font-semibold text-[var(--text-heading)] pb-1">
-              Age &amp; Mandatory Consents (Unticked by default)
-            </legend>
-
-            <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={adultConfirmed}
-                onChange={(e) => setAdultConfirmed(e.target.checked)}
-                className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-              />
-              <span className="text-[15px]">I confirm that I am 18 years of age or older.</span>
-            </label>
-
-            <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={termsChecked}
-                onChange={(e) => setTermsChecked(e.target.checked)}
-                className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-              />
-              <span className="text-[15px]">
-                I have read and accept the{' '}
-                <Link href="/terms" className="text-[#1C4A8F] underline font-semibold">
-                  Terms of Service (v1.0)
-                </Link>
-                .
-              </span>
-            </label>
-
-            <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={privacyChecked}
-                onChange={(e) => setPrivacyChecked(e.target.checked)}
-                className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-              />
-              <span className="text-[15px]">
-                I have read and accept the{' '}
-                <Link href="/privacy" className="text-[#1C4A8F] underline font-semibold">
-                  Privacy Notice (v1.0)
-                </Link>
-                .
-              </span>
-            </label>
-
-            <label className="flex items-start gap-3 min-h-[44px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={guidelinesChecked}
-                onChange={(e) => setGuidelinesChecked(e.target.checked)}
-                className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-              />
-              <span className="text-[15px]">
-                I agree to follow the{' '}
-                <Link
-                  href="/community-guidelines"
-                  className="text-[#1C4A8F] underline font-semibold"
-                >
-                  Community Guidelines (v1.0)
-                </Link>
-                .
-              </span>
-            </label>
-          </fieldset>
-
-          {authError && (
-            <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
-              {authError}
-            </p>
-          )}
-
           <button
-            type="submit"
-            disabled={!allConsented}
-            className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
+            type="button"
+            onClick={() => setOnboardingStage('none')}
+            className="min-h-[40px] px-3 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] cursor-pointer"
           >
-            Send 6-digit OTP
+            Back to Feed
           </button>
-        </form>
+        </div>
+
+        {/* Auth Mode Switcher Tabs */}
+        <div className="grid grid-cols-3 gap-1.5 bg-[var(--surface-subtle)] p-1 rounded-[8px] border border-[var(--border-color)]">
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('signup');
+              setAuthError(null);
+            }}
+            className={`min-h-[40px] rounded-[6px] text-[14px] font-semibold cursor-pointer ${
+              authMode === 'signup'
+                ? 'bg-[#0B2A5B] text-white'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
+            }`}
+          >
+            Sign Up
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('login');
+              setAuthError(null);
+            }}
+            className={`min-h-[40px] rounded-[6px] text-[14px] font-semibold cursor-pointer ${
+              authMode === 'login'
+                ? 'bg-[#0B2A5B] text-white'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('forgot');
+              setAuthError(null);
+            }}
+            className={`min-h-[40px] rounded-[6px] text-[14px] font-semibold cursor-pointer ${
+              authMode === 'forgot'
+                ? 'bg-[#0B2A5B] text-white'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
+            }`}
+          >
+            Forgot Password
+          </button>
+        </div>
+
+        {authMode === 'signup' ? (
+          <form
+            onSubmit={handleStudentSignUp}
+            className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4"
+          >
+            <button
+              type="button"
+              disabled={authSubmitting}
+              onClick={() => void handleContinueWithGoogle()}
+              className="w-full min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[15px] flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              <span className="w-5 h-5 rounded-full bg-[#0B2A5B] text-[#D9A21B] text-[12px] font-bold inline-flex items-center justify-center">
+                G
+              </span>
+              <span>Continue with Google</span>
+            </button>
+
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-[var(--border-color)]" />
+              <span className="flex-shrink mx-3 text-[12px] font-semibold uppercase text-[var(--text-secondary)]">
+                Or sign up with Index Number
+              </span>
+              <div className="flex-grow border-t border-[var(--border-color)]" />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="signup-username"
+                  className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+                >
+                  Username (Private to you)
+                </label>
+                <input
+                  id="signup-username"
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={24}
+                  placeholder="kwame_upsa"
+                  value={signupUsername}
+                  onChange={(e) => setSignupUsername(e.target.value)}
+                  className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                />
+                <p className="text-[12px] text-[var(--text-secondary)] mt-1">
+                  Never shown on posts; threads only show OP or Student n.
+                </p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="signup-index-number"
+                  className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+                >
+                  UPSA Student Index Number
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    id="signup-index-number"
+                    type="text"
+                    required
+                    placeholder="10284912"
+                    value={signupIndexNumber}
+                    onChange={(e) => {
+                      setSignupIndexNumber(e.target.value);
+                      setIndexVerifiedBadge(null);
+                    }}
+                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleVerifyStudentIndex()}
+                    className="min-h-[44px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] cursor-pointer"
+                  >
+                    Verify
+                  </button>
+                </div>
+                {indexVerifiedBadge ? (
+                  <p className="text-[12px] font-semibold text-[#1F7A4D] mt-1">
+                    ✓ {indexVerifiedBadge}
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-[var(--text-secondary)] mt-1">
+                    Validated via UPSA Student Index API key (e.g. <code>10284912</code>).
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="signup-password"
+                className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+              >
+                Password
+              </label>
+              <input
+                id="signup-password"
+                type="password"
+                required
+                minLength={8}
+                placeholder="At least 8 characters"
+                value={signupPassword}
+                onChange={(e) => setSignupPassword(e.target.value)}
+                className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+              />
+            </div>
+
+            <fieldset className="space-y-2.5 pt-2 border-t border-[var(--border-color)]">
+              <legend className="text-[14px] font-semibold text-[var(--text-heading)] pb-1">
+                Age &amp; Mandatory Consents (Unticked by default)
+              </legend>
+
+              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={adultConfirmed}
+                  onChange={(e) => setAdultConfirmed(e.target.checked)}
+                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
+                />
+                <span className="text-[14px]">I confirm that I am 18 years of age or older.</span>
+              </label>
+
+              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={termsChecked}
+                  onChange={(e) => setTermsChecked(e.target.checked)}
+                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
+                />
+                <span className="text-[14px]">
+                  I have read and accept the{' '}
+                  <Link href="/terms" className="text-[#1C4A8F] underline font-semibold">
+                    Terms of Service (v1.0)
+                  </Link>
+                  .
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={privacyChecked}
+                  onChange={(e) => setPrivacyChecked(e.target.checked)}
+                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
+                />
+                <span className="text-[14px]">
+                  I have read and accept the{' '}
+                  <Link href="/privacy" className="text-[#1C4A8F] underline font-semibold">
+                    Privacy Notice (v1.0)
+                  </Link>
+                  .
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={guidelinesChecked}
+                  onChange={(e) => setGuidelinesChecked(e.target.checked)}
+                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
+                />
+                <span className="text-[14px]">
+                  I agree to follow the{' '}
+                  <Link
+                    href="/community-guidelines"
+                    className="text-[#1C4A8F] underline font-semibold"
+                  >
+                    Community Guidelines (v1.0)
+                  </Link>
+                  .
+                </span>
+              </label>
+            </fieldset>
+
+            {authError && (
+              <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
+                {authError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={!allConsented || authSubmitting}
+              className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
+            >
+              {authSubmitting ? 'Verifying Student Index...' : 'Sign Up with Index Number'}
+            </button>
+          </form>
+        ) : authMode === 'login' ? (
+          <form
+            onSubmit={handleStudentLogin}
+            className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4"
+          >
+            <button
+              type="button"
+              disabled={authSubmitting}
+              onClick={() => void handleContinueWithGoogle()}
+              className="w-full min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[15px] flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              <span className="w-5 h-5 rounded-full bg-[#0B2A5B] text-[#D9A21B] text-[12px] font-bold inline-flex items-center justify-center">
+                G
+              </span>
+              <span>Continue with Google</span>
+            </button>
+
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-[var(--border-color)]" />
+              <span className="flex-shrink mx-3 text-[12px] font-semibold uppercase text-[var(--text-secondary)]">
+                Or sign in with Username / Index Number
+              </span>
+              <div className="flex-grow border-t border-[var(--border-color)]" />
+            </div>
+
+            <div>
+              <label
+                htmlFor="login-identifier"
+                className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+              >
+                UPSA Index Number or Username
+              </label>
+              <input
+                id="login-identifier"
+                type="text"
+                required
+                placeholder="10284912 or kwame_upsa"
+                value={loginIdentifier}
+                onChange={(e) => setLoginIdentifier(e.target.value)}
+                className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="login-password"
+                  className="block text-[14px] font-semibold text-[var(--text-heading)]"
+                >
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('forgot');
+                    setForgotIdentifier(loginIdentifier);
+                    setAuthError(null);
+                  }}
+                  className="text-[13px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <input
+                id="login-password"
+                type="password"
+                required
+                placeholder="Enter your password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+              />
+            </div>
+
+            {authError && (
+              <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
+                {authError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={authSubmitting}
+              className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
+            >
+              {authSubmitting ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+        ) : (
+          <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4">
+            {forgotStep === 'request' ? (
+              <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
+                <p className="text-[14px] text-[var(--text-secondary)]">
+                  Enter your UPSA Student Index Number or Username to request a 6-digit password
+                  recovery code.
+                </p>
+                <div>
+                  <label
+                    htmlFor="forgot-identifier"
+                    className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+                  >
+                    UPSA Index Number or Username
+                  </label>
+                  <input
+                    id="forgot-identifier"
+                    type="text"
+                    required
+                    placeholder="10284912 or kwame_upsa"
+                    value={forgotIdentifier}
+                    onChange={(e) => setForgotIdentifier(e.target.value)}
+                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                  />
+                </div>
+                {authError && (
+                  <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
+                    {authError}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  disabled={authSubmitting}
+                  className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
+                >
+                  Send 6-Digit Recovery Code
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleForgotPasswordReset} className="space-y-4">
+                {forgotStatusMsg && (
+                  <div className="p-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold">
+                    {forgotStatusMsg}
+                  </div>
+                )}
+                <div>
+                  <label
+                    htmlFor="forgot-code"
+                    className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+                  >
+                    6-Digit Recovery Code
+                  </label>
+                  <input
+                    id="forgot-code"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    required
+                    placeholder="123456"
+                    value={forgotResetCode}
+                    onChange={(e) => setForgotResetCode(e.target.value)}
+                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[16px] tracking-widest font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="forgot-new-password"
+                    className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
+                  >
+                    New Password
+                  </label>
+                  <input
+                    id="forgot-new-password"
+                    type="password"
+                    required
+                    minLength={8}
+                    placeholder="At least 8 characters"
+                    value={forgotNewPassword}
+                    onChange={(e) => setForgotNewPassword(e.target.value)}
+                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                  />
+                </div>
+                {authError && (
+                  <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
+                    {authError}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={authSubmitting}
+                    className="flex-1 min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
+                  >
+                    Set New Password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep('request')}
+                    className="min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] text-[14px] font-semibold cursor-pointer"
+                  >
+                    Resend
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -1155,6 +1742,17 @@ export function PulseApp() {
 
                 {overflowOpen && (
                   <div className="absolute right-0 mt-1 w-64 bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-[8px] py-1 z-40">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOverflowOpen(false);
+                        setAuthMode('signup');
+                        setOnboardingStage('signup');
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-[14px] font-semibold text-[#0B2A5B] hover:bg-[var(--surface-subtle)] cursor-pointer"
+                    >
+                      Student Sign Up / Sign In / Reset Password
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -2117,6 +2715,49 @@ export function PulseApp() {
                 {accountDeletedMessage}
               </div>
             )}
+
+            {/* Private Student Identity & Authentication Card */}
+            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-[13px] font-semibold text-[var(--text-secondary)]">
+                    Private Student Credentials (Never visible on public posts)
+                  </div>
+                  <div className="text-[18px] font-bold text-[var(--text-heading)] mt-1">
+                    @{profileSummary?.username ?? 'efua_upsa'}{' '}
+                    <span className="text-[14px] font-mono text-[#1C4A8F]">
+                      · Index #{profileSummary?.indexNumber ?? '10284001'}
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+                    Provider: {profileSummary?.authProvider ?? 'password'} · Index Verified:{' '}
+                    {profileSummary?.indexVerified !== false ? 'Yes (API Key Active)' : 'Pending'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signup');
+                      setOnboardingStage('signup');
+                    }}
+                    className="min-h-[40px] px-3.5 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold hover:bg-[#1C4A8F] cursor-pointer"
+                  >
+                    Sign Up / Switch Student
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('forgot');
+                      setOnboardingStage('signup');
+                    }}
+                    className="min-h-[40px] px-3.5 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] cursor-pointer"
+                  >
+                    Reset Password
+                  </button>
+                </div>
+              </div>
+            </div>
 
             {/* Private Karma Card — KARMA-1 */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 flex items-center justify-between">

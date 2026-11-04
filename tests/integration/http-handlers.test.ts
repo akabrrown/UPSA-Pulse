@@ -536,5 +536,166 @@ describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
       addPlaceJson.data.zones.some((z: { name: string }) => z.name === 'Hostel D Annex')
     ).toBe(true);
   });
+
+  it('supports student signup with username + index number + password, API key index verification, login, Google auth, and forgot password', async () => {
+    // 1. Reject invalid UPSA index number format during signup
+    const badIndexRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'signup',
+          username: 'kwame_upsa',
+          indexNumber: '123',
+          password: 'UpsaPulse#2026',
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        },
+      })
+    );
+    expect(badIndexRes.status).toBe(400);
+
+    // 2. Valid signup with username, UPSA index number, password, and consents
+    const signupRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'signup',
+          username: 'kwame_upsa',
+          indexNumber: '10284912',
+          password: 'UpsaPulse#2026',
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        },
+      })
+    );
+    expect(signupRes.status).toBe(201);
+    const signupJson = await signupRes.json();
+    expect(signupJson.data.username).toBe('kwame_upsa');
+    expect(signupJson.data.indexNumber).toBe('10284912');
+    expect(signupJson.data.indexVerified).toBe(true);
+    expect(signupJson.data.deviceStatus).toBe('trusted');
+
+    // 3. Reject duplicate indexNumber or username
+    const dupRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'signup',
+          username: 'kwame_upsa',
+          indexNumber: '10284912',
+          password: 'UpsaPulse#2026',
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        },
+      })
+    );
+    expect(dupRes.status).toBe(409);
+
+    // 4. Reject login with wrong password
+    const wrongPassRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'login',
+          identifier: '10284912',
+          password: 'WrongPassword#999',
+        },
+      })
+    );
+    expect(wrongPassRes.status).toBe(401);
+
+    // 5. Login with index number + password, and with username + password
+    const loginIndexRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'login',
+          identifier: '10284912',
+          password: 'UpsaPulse#2026',
+        },
+      })
+    );
+    expect(loginIndexRes.status).toBe(200);
+    const loginIndexJson = await loginIndexRes.json();
+    expect(loginIndexJson.data.username).toBe('kwame_upsa');
+
+    const loginUserRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'login',
+          identifier: 'kwame_upsa',
+          password: 'UpsaPulse#2026',
+        },
+      })
+    );
+    expect(loginUserRes.status).toBe(200);
+
+    // 6. Continue with Google (requires valid UPSA index number + consents on first sign-in)
+    const googleRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'google',
+          googleEmail: 'abena.mensah@upsamail.edu.gh',
+          username: 'abena_upsa',
+          indexNumber: '10295501',
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        },
+      })
+    );
+    expect(googleRes.status).toBe(200);
+    const googleJson = await googleRes.json();
+    expect(googleJson.data.authProvider).toBe('google');
+    expect(googleJson.data.indexNumber).toBe('10295501');
+
+    // 7. Forgot password request -> reset -> login with new password
+    const forgotReqRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'forgot_password_request',
+          identifier: '10284912',
+        },
+      })
+    );
+    expect(forgotReqRes.status).toBe(200);
+    const forgotReqJson = await forgotReqRes.json();
+    expect(forgotReqJson.data.devResetCode).toMatch(/^\d{6}$/);
+
+    const forgotResetRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'forgot_password_reset',
+          identifier: '10284912',
+          resetCode: forgotReqJson.data.devResetCode,
+          newPassword: 'NewPulsePassword#2027',
+        },
+      })
+    );
+    expect(forgotResetRes.status).toBe(200);
+
+    const loginNewPassRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'login',
+          identifier: '10284912',
+          password: 'NewPulsePassword#2027',
+        },
+      })
+    );
+    expect(loginNewPassRes.status).toBe(200);
+  });
 });
 

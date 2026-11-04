@@ -52,6 +52,74 @@ export const otpVerifySchema = z.object({
   deviceToken: z.string().min(8).max(256).optional(),
 });
 
+export const studentSignUpSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Username must be at least 3 characters')
+    .max(24, 'Username cannot exceed 24 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only use letters, numbers, and underscores'),
+  indexNumber: z
+    .string()
+    .trim()
+    .min(6, 'Enter your UPSA student index number')
+    .max(24, 'Index number is too long'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password cannot exceed 128 characters'),
+  email: z.string().trim().email().optional(),
+  adultConfirmed: z.literal(true, {
+    errorMap: () => ({ message: 'You must confirm you are 18 or over.' }),
+  }),
+  termsAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'You must accept the Terms of Service.' }),
+  }),
+  privacyAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'You must accept the Privacy Notice.' }),
+  }),
+  guidelinesAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'You must accept the Community Guidelines.' }),
+  }),
+  deviceToken: z.string().min(8).max(256).optional(),
+});
+
+export const studentLoginSchema = z.object({
+  identifier: z.string().trim().min(3, 'Enter your UPSA index number or username').max(64),
+  password: z.string().min(1, 'Enter your password').max(128),
+  deviceToken: z.string().min(8).max(256).optional(),
+});
+
+export const googleAuthSchema = z.object({
+  googleEmail: z.string().trim().email('Enter a valid Google email'),
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Username must be at least 3 characters')
+    .max(24, 'Username cannot exceed 24 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only use letters, numbers, and underscores')
+    .optional(),
+  indexNumber: z.string().trim().min(6).max(24).optional(),
+  adultConfirmed: z.boolean().optional(),
+  termsAccepted: z.boolean().optional(),
+  privacyAccepted: z.boolean().optional(),
+  guidelinesAccepted: z.boolean().optional(),
+  deviceToken: z.string().min(8).max(256).optional(),
+});
+
+export const forgotPasswordRequestSchema = z.object({
+  identifier: z.string().trim().min(3, 'Enter your UPSA index number or username').max(64),
+});
+
+export const forgotPasswordResetSchema = z.object({
+  identifier: z.string().trim().min(3, 'Enter your UPSA index number or username').max(64),
+  resetCode: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit recovery code'),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters')
+    .max(128, 'Password cannot exceed 128 characters'),
+});
+
 // ZONE-1 & ZONE-2: Position verification input
 export const zoneVerifySchema = z.object({
   lat: z.number().min(-90).max(90),

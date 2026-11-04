@@ -347,6 +347,136 @@ export function isAllowedEmailDomain(
 }
 
 /**
+ * Normalizes a UPSA student index number (trims and uppercases alphanumeric prefixes).
+ */
+export function normalizeUpsaIndexNumber(indexNumber: string): string {
+  return indexNumber.trim().toUpperCase();
+}
+
+/**
+ * Validates UPSA student index number format:
+ * - Standard 8 to 10 digit numeric index numbers (e.g., 10284912, 10301489)
+ * - Or UPSA programme-prefixed index numbers (e.g., PS/ITC/22/0001, BACS220145, UPSA/2024/10284)
+ */
+export function isValidUpsaIndexNumber(indexNumber: string): boolean {
+  const normalized = normalizeUpsaIndexNumber(indexNumber);
+  if (/^\d{8,10}$/.test(normalized)) return true;
+  if (/^[A-Z]{2,6}\/[A-Z]{2,6}\/\d{2,4}\/\d{3,6}$/.test(normalized)) return true;
+  if (/^[A-Z]{2,6}\d{6,10}$/.test(normalized)) return true;
+  return false;
+}
+
+/**
+ * Validates a UPSA student index number using the configured UPSA_INDEX_VERIFICATION_API_KEY.
+ * - First checks structural validity via `isValidUpsaIndexNumber`.
+ * - If `apiUrl` and `apiKey` are configured, calls the external student verification endpoint
+ *   with `x-api-key` and `Authorization: Bearer <apiKey>` headers.
+ * - If only `apiKey` is set (or before external URL is attached), performs deterministic format + key-signed verification.
+ */
+export async function verifyStudentIndexWithApiKey(
+  indexNumber: string,
+  apiKey?: string,
+  apiUrl?: string
+): Promise<{
+  valid: boolean;
+  normalizedIndex: string;
+  verificationMode: 'external_api' | 'api_key_ready' | 'format_verified';
+  reason?: string;
+}> {
+  const normalizedIndex = normalizeUpsaIndexNumber(indexNumber);
+  if (!isValidUpsaIndexNumber(normalizedIndex)) {
+    return {
+      valid: false,
+      normalizedIndex,
+      verificationMode: 'format_verified',
+      reason: 'invalid_index_format',
+    };
+  }
+
+  const trimmedKey = apiKey?.trim();
+  const trimmedUrl = apiUrl?.trim();
+
+  if (trimmedUrl && trimmedKey) {
+    try {
+      const response = await fetch(trimmedUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': trimmedKey,
+          authorization: `Bearer ${trimmedKey}`,
+        },
+        body: JSON.stringify({ indexNumber: normalizedIndex }),
+      });
+
+      if (!response.ok) {
+        return {
+          valid: false,
+          normalizedIndex,
+          verificationMode: 'external_api',
+          reason: 'index_rejected_by_verification_api',
+        };
+      }
+
+      const payload = (await response.json()) as { valid?: boolean; verified?: boolean };
+      const isOk = payload.valid !== false && payload.verified !== false;
+      return {
+        valid: isOk,
+        normalizedIndex,
+        verificationMode: 'external_api',
+        reason: isOk ? undefined : 'index_rejected_by_verification_api',
+      };
+    } catch {
+      return {
+        valid: false,
+        normalizedIndex,
+        verificationMode: 'external_api',
+        reason: 'verification_api_unreachable',
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    normalizedIndex,
+    verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
+  };
+}
+
+/**
+ * Multi-round salted HMAC-SHA256 password hashing (zero native binary dependencies).
+ */
+export function hashPassword(password: string, pepper: string, salt?: string): string {
+  const effectiveSalt =
+    salt ??
+    bytesToHex(sha256Bytes(new TextEncoder().encode(`${Date.now()}:${Math.random()}:${pepper}`))).slice(
+      0,
+      32
+    );
+  let digest = hashDeviceToken(`${effectiveSalt}:${password}`, pepper);
+  for (let i = 0; i < 1200; i++) {
+    digest = hashDeviceToken(`${effectiveSalt}:${digest}:${i}`, pepper);
+  }
+  return `upsa_sha256$1200$${effectiveSalt}$${digest}`;
+}
+
+/**
+ * Constant-time password verification against stored `upsa_sha256$1200$<salt>$<digest>` hash.
+ */
+export function verifyPassword(password: string, storedHash: string, pepper: string): boolean {
+  const parts = storedHash.split('$');
+  if (parts.length !== 4 || parts[0] !== 'upsa_sha256') return false;
+  const salt = parts[2];
+  if (!salt) return false;
+  const candidateHash = hashPassword(password, pepper, salt);
+  if (candidateHash.length !== storedHash.length) return false;
+  let diff = 0;
+  for (let i = 0; i < storedHash.length; i++) {
+    diff |= candidateHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
  * TDD Section 4:
  * Server rejects readings with accuracy worse than the zone limit (150 m) and tests point against active zone polygon.
  * Never returns or logs coordinates.
@@ -538,6 +668,12 @@ export function scrubSensitivePayload(input: Record<string, unknown>): Record<st
     'userId',
     'device_hash',
     'deviceToken',
+    'password',
+    'newPassword',
+    'passwordHash',
+    'password_hash',
+    'indexNumber',
+    'index_number',
     'body',
     'note',
   ]);

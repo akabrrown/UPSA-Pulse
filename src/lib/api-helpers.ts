@@ -80,6 +80,36 @@ export function mapDomainErrorToResponse(err: unknown) {
         'An appeal has already been submitted for this moderation action.',
         409
       );
+    case 'student_already_registered':
+      return apiError(
+        'student_already_registered',
+        'A student account with this UPSA index number or username already exists.',
+        409
+      );
+    case 'invalid_credentials':
+      return apiError(
+        'invalid_credentials',
+        'Invalid UPSA index number, username, or password.',
+        401
+      );
+    case 'account_not_found':
+      return apiError(
+        'account_not_found',
+        'No student account matched that UPSA index number or username.',
+        404
+      );
+    case 'invalid_reset_code':
+      return apiError(
+        'invalid_reset_code',
+        'Invalid or expired 6-digit password reset code.',
+        400
+      );
+    case 'index_required_for_google_signup':
+      return apiError(
+        'index_required_for_google_signup',
+        'Please enter your UPSA student index number and accept the legal consents to complete Google sign-up.',
+        400
+      );
     case 'forbidden':
     case 'account_suspended':
     case 'account_banned':

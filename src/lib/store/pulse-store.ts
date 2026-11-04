@@ -5,10 +5,13 @@ import {
   DEFAULT_KEYWORD_RULES,
   DEFAULT_UPSA_ZONES,
   hashDeviceToken,
+  hashPassword,
   isAllowedEmailDomain,
   type KeywordRuleConfig,
+  normalizeUpsaIndexNumber,
   parseGeoJsonPolygonRing,
   screenContentText,
+  verifyPassword,
   verifyZonePoint,
   type ZonePolygonConfig,
 } from '@/lib/domain/pulse-engine';
@@ -24,6 +27,11 @@ import type {
 export interface ProfileRecord {
   id: string;
   email: string;
+  username?: string | null;
+  indexNumber?: string | null;
+  passwordHash?: string | null;
+  authProvider?: 'password' | 'google' | 'otp';
+  indexVerifiedAt?: string | null;
   status: UserStatus;
   statusUntil: string | null;
   karma: number;
@@ -225,6 +233,7 @@ interface PulseState {
   pushSubscriptions: Array<{ id: number; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }>;
   dataRequests: DataRequestRecord[];
   appeals: AppealRecord[];
+  passwordResets: Map<string, { codeHash: string; rawDevCode: string; expiresAt: string }>;
   rateWindows: Map<string, number[]>; // `${userId}:${action}` -> timestamps
   nextSequenceId: number;
 }
@@ -326,6 +335,11 @@ function createInitialState(): PulseState {
       {
         id: '11111111-1111-4111-8111-111111111111',
         email: 'efua@st.upsa.edu.gh',
+        username: 'efua_upsa',
+        indexNumber: '10284001',
+        passwordHash: null,
+        authProvider: 'password',
+        indexVerifiedAt: nowIso,
         status: 'active',
         statusUntil: null,
         karma: 14,
@@ -344,6 +358,11 @@ function createInitialState(): PulseState {
       {
         id: '22222222-2222-4222-8222-222222222222',
         email: 'kojo@st.upsa.edu.gh',
+        username: 'kojo_upsa',
+        indexNumber: '10284002',
+        passwordHash: null,
+        authProvider: 'password',
+        indexVerifiedAt: nowIso,
         status: 'active',
         statusUntil: null,
         karma: 27,
@@ -617,6 +636,7 @@ function createInitialState(): PulseState {
     pushSubscriptions: [],
     dataRequests: [],
     appeals: [],
+    passwordResets: new Map(),
     rateWindows: new Map(),
     nextSequenceId: 100,
   };
@@ -1357,6 +1377,10 @@ export function getMyProfileSummaryFromStore(userId: string) {
   );
 
   return {
+    username: profile.username ?? null,
+    indexNumber: profile.indexNumber ?? null,
+    authProvider: profile.authProvider ?? 'otp',
+    indexVerified: Boolean(profile.indexVerifiedAt),
     status: profile.status,
     statusUntil: profile.statusUntil,
     karma: profile.karma,
@@ -2041,4 +2065,348 @@ export function approvePendingDeviceInStore(input: {
   };
   state.devices.push(created);
   return { id: created.id, status: 'trusted', approvedAt: nowIso };
+}
+
+function registerOrCheckDeviceForUser(
+  userId: string,
+  rawDeviceToken: string,
+  pepper: string
+): 'trusted' | 'pending' {
+  const nowIso = new Date().toISOString();
+  const deviceHash = hashDeviceToken(rawDeviceToken, pepper);
+  const existingTrustedForUser = state.devices.find(
+    (d) => d.userId === userId && d.status === 'trusted'
+  );
+
+  if (!existingTrustedForUser) {
+    state.devices.push({
+      id: crypto.randomUUID(),
+      userId,
+      deviceHash,
+      status: 'trusted',
+      createdAt: nowIso,
+      lastSeenAt: nowIso,
+    });
+    return 'trusted';
+  }
+
+  if (existingTrustedForUser.deviceHash === deviceHash) {
+    existingTrustedForUser.lastSeenAt = nowIso;
+    return 'trusted';
+  }
+
+  state.devices.push({
+    id: crypto.randomUUID(),
+    userId,
+    deviceHash,
+    status: 'pending',
+    createdAt: nowIso,
+    lastSeenAt: nowIso,
+  });
+  return 'pending';
+}
+
+export function signUpStudentInStore(input: {
+  username: string;
+  indexNumber: string;
+  password: string;
+  email?: string;
+  rawDeviceToken: string;
+  pepper: string;
+}): {
+  userId: string;
+  username: string;
+  indexNumber: string;
+  email: string;
+  authProvider: 'password';
+  indexVerified: boolean;
+  deviceStatus: 'trusted' | 'pending';
+} {
+  const cleanUsername = input.username.trim().toLowerCase();
+  const cleanIndex = normalizeUpsaIndexNumber(input.indexNumber);
+  const cleanEmail = (
+    input.email?.trim() || `${cleanIndex.replace(/[^A-Z0-9]/gi, '').toLowerCase()}@st.upsa.edu.gh`
+  ).toLowerCase();
+
+  const existingDuplicate = Array.from(state.profiles.values()).find(
+    (p) =>
+      (p.username && p.username.toLowerCase() === cleanUsername) ||
+      (p.indexNumber && normalizeUpsaIndexNumber(p.indexNumber) === cleanIndex) ||
+      p.email.toLowerCase() === cleanEmail
+  );
+
+  if (existingDuplicate) {
+    throw new Error('student_already_registered');
+  }
+
+  const nowIso = new Date().toISOString();
+  const validWindowIso = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const newId = crypto.randomUUID();
+  const passwordHash = hashPassword(input.password, input.pepper);
+
+  const profile: ProfileRecord = {
+    id: newId,
+    email: cleanEmail,
+    username: cleanUsername,
+    indexNumber: cleanIndex,
+    passwordHash,
+    authProvider: 'password',
+    indexVerifiedAt: nowIso,
+    status: 'active',
+    statusUntil: null,
+    karma: 0,
+    zoneId: 1,
+    zoneVerifiedUntil: validWindowIso,
+    isAdmin: false,
+    canModerate: false,
+    canUnmask: false,
+    adultConfirmedAt: nowIso,
+    createdAt: nowIso,
+    lastSeenOn: nowIso.slice(0, 10),
+  };
+
+  state.profiles.set(newId, profile);
+  for (const doc of ['terms', 'privacy', 'community_guidelines'] as const) {
+    recordConsentInStore(newId, { document: doc, version: '1.0' });
+  }
+
+  const deviceStatus = registerOrCheckDeviceForUser(newId, input.rawDeviceToken, input.pepper);
+  return {
+    userId: newId,
+    username: cleanUsername,
+    indexNumber: cleanIndex,
+    email: cleanEmail,
+    authProvider: 'password',
+    indexVerified: true,
+    deviceStatus,
+  };
+}
+
+export function loginStudentInStore(input: {
+  identifier: string;
+  password: string;
+  rawDeviceToken: string;
+  pepper: string;
+}): {
+  userId: string;
+  username: string | null;
+  indexNumber: string | null;
+  email: string;
+  authProvider: 'password' | 'google' | 'otp';
+  indexVerified: boolean;
+  deviceStatus: 'trusted' | 'pending';
+} {
+  const cleanId = input.identifier.trim();
+  const lowerId = cleanId.toLowerCase();
+  const normalizedIdx = normalizeUpsaIndexNumber(cleanId);
+
+  const profile = Array.from(state.profiles.values()).find(
+    (p) =>
+      (p.username && p.username.toLowerCase() === lowerId) ||
+      (p.indexNumber && normalizeUpsaIndexNumber(p.indexNumber) === normalizedIdx) ||
+      p.email.toLowerCase() === lowerId
+  );
+
+  if (!profile || !profile.passwordHash) {
+    throw new Error('invalid_credentials');
+  }
+
+  if (!verifyPassword(input.password, profile.passwordHash, input.pepper)) {
+    throw new Error('invalid_credentials');
+  }
+
+  if (profile.status === 'banned' || profile.status === 'deleted') {
+    throw new Error(`account_${profile.status}`);
+  }
+
+  const deviceStatus = registerOrCheckDeviceForUser(profile.id, input.rawDeviceToken, input.pepper);
+  return {
+    userId: profile.id,
+    username: profile.username ?? null,
+    indexNumber: profile.indexNumber ?? null,
+    email: profile.email,
+    authProvider: profile.authProvider ?? 'password',
+    indexVerified: Boolean(profile.indexVerifiedAt),
+    deviceStatus,
+  };
+}
+
+export function googleAuthStudentInStore(input: {
+  googleEmail: string;
+  username?: string;
+  indexNumber?: string;
+  rawDeviceToken: string;
+  pepper: string;
+}): {
+  userId: string;
+  username: string;
+  indexNumber: string | null;
+  email: string;
+  authProvider: 'google';
+  indexVerified: boolean;
+  deviceStatus: 'trusted' | 'pending';
+} {
+  const cleanEmail = input.googleEmail.trim().toLowerCase();
+  const cleanIdx = input.indexNumber ? normalizeUpsaIndexNumber(input.indexNumber) : null;
+  const nowIso = new Date().toISOString();
+  const validWindowIso = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  let profile = Array.from(state.profiles.values()).find(
+    (p) =>
+      p.email.toLowerCase() === cleanEmail ||
+      (cleanIdx && p.indexNumber && normalizeUpsaIndexNumber(p.indexNumber) === cleanIdx)
+  );
+
+  if (!profile) {
+    if (!cleanIdx) {
+      throw new Error('index_required_for_google_signup');
+    }
+    const baseUser = (input.username?.trim() || cleanEmail.split('@')[0] || 'upsa_student')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '_')
+      .slice(0, 24);
+    const finalUsername = Array.from(state.profiles.values()).some(
+      (p) => p.username?.toLowerCase() === baseUser
+    )
+      ? `${baseUser.slice(0, 18)}_${cleanIdx.slice(-4).toLowerCase()}`
+      : baseUser;
+
+    const newId = crypto.randomUUID();
+    profile = {
+      id: newId,
+      email: cleanEmail,
+      username: finalUsername,
+      indexNumber: cleanIdx,
+      passwordHash: null,
+      authProvider: 'google',
+      indexVerifiedAt: nowIso,
+      status: 'active',
+      statusUntil: null,
+      karma: 0,
+      zoneId: 1,
+      zoneVerifiedUntil: validWindowIso,
+      isAdmin: false,
+      canModerate: false,
+      canUnmask: false,
+      adultConfirmedAt: nowIso,
+      createdAt: nowIso,
+      lastSeenOn: nowIso.slice(0, 10),
+    };
+    state.profiles.set(newId, profile);
+    for (const doc of ['terms', 'privacy', 'community_guidelines'] as const) {
+      recordConsentInStore(newId, { document: doc, version: '1.0' });
+    }
+  } else {
+    profile.authProvider = 'google';
+    if (cleanIdx && !profile.indexNumber) {
+      profile.indexNumber = cleanIdx;
+      profile.indexVerifiedAt = nowIso;
+    }
+  }
+
+  const deviceStatus = registerOrCheckDeviceForUser(profile.id, input.rawDeviceToken, input.pepper);
+  return {
+    userId: profile.id,
+    username: profile.username ?? cleanEmail.split('@')[0] ?? 'student',
+    indexNumber: profile.indexNumber ?? null,
+    email: profile.email,
+    authProvider: 'google',
+    indexVerified: Boolean(profile.indexVerifiedAt),
+    deviceStatus,
+  };
+}
+
+export function requestPasswordResetInStore(input: {
+  identifier: string;
+  pepper: string;
+}): {
+  userId: string;
+  maskedTarget: string;
+  devResetCode: string;
+  expiresInMinutes: number;
+} {
+  const cleanId = input.identifier.trim();
+  const lowerId = cleanId.toLowerCase();
+  const normalizedIdx = normalizeUpsaIndexNumber(cleanId);
+
+  const profile = Array.from(state.profiles.values()).find(
+    (p) =>
+      (p.username && p.username.toLowerCase() === lowerId) ||
+      (p.indexNumber && normalizeUpsaIndexNumber(p.indexNumber) === normalizedIdx) ||
+      p.email.toLowerCase() === lowerId
+  );
+
+  if (!profile) {
+    throw new Error('account_not_found');
+  }
+
+  const seedHash = hashDeviceToken(`reset:${profile.id}:${Date.now()}`, input.pepper);
+  const numericCode = String((Number.parseInt(seedHash.slice(0, 8), 16) % 900000) + 100000);
+  const codeHash = hashDeviceToken(`reset_code:${profile.id}:${numericCode}`, input.pepper);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  state.passwordResets.set(profile.id, {
+    codeHash,
+    rawDevCode: numericCode,
+    expiresAt,
+  });
+
+  const maskedTarget = profile.indexNumber
+    ? `Index ***${profile.indexNumber.slice(-4)}`
+    : profile.email.replace(/(^..).*(@.*$)/, '$1***$2');
+
+  return {
+    userId: profile.id,
+    maskedTarget,
+    devResetCode: numericCode,
+    expiresInMinutes: 15,
+  };
+}
+
+export function confirmPasswordResetInStore(input: {
+  identifier: string;
+  resetCode: string;
+  newPassword: string;
+  pepper: string;
+}): {
+  userId: string;
+  username: string | null;
+  indexNumber: string | null;
+} {
+  const cleanId = input.identifier.trim();
+  const lowerId = cleanId.toLowerCase();
+  const normalizedIdx = normalizeUpsaIndexNumber(cleanId);
+
+  const profile = Array.from(state.profiles.values()).find(
+    (p) =>
+      (p.username && p.username.toLowerCase() === lowerId) ||
+      (p.indexNumber && normalizeUpsaIndexNumber(p.indexNumber) === normalizedIdx) ||
+      p.email.toLowerCase() === lowerId
+  );
+
+  if (!profile) {
+    throw new Error('invalid_reset_code');
+  }
+
+  const stored = state.passwordResets.get(profile.id);
+  if (!stored || new Date(stored.expiresAt).getTime() < Date.now()) {
+    throw new Error('invalid_reset_code');
+  }
+
+  const candidateHash = hashDeviceToken(
+    `reset_code:${profile.id}:${input.resetCode.trim()}`,
+    input.pepper
+  );
+  if (candidateHash !== stored.codeHash) {
+    throw new Error('invalid_reset_code');
+  }
+
+  profile.passwordHash = hashPassword(input.newPassword, input.pepper);
+  state.passwordResets.delete(profile.id);
+
+  return {
+    userId: profile.id,
+    username: profile.username ?? null,
+    indexNumber: profile.indexNumber ?? null,
+  };
 }

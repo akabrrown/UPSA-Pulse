@@ -1,5 +1,11 @@
 import pg from 'pg';
-import { hashDeviceToken, parseGeoJsonPolygonRing } from '@/lib/domain/pulse-engine';
+import {
+  hashDeviceToken,
+  hashPassword,
+  normalizeUpsaIndexNumber,
+  parseGeoJsonPolygonRing,
+  verifyPassword,
+} from '@/lib/domain/pulse-engine';
 import {
   verifyUserZoneInStore,
   getChannelsFromStore,
@@ -28,6 +34,11 @@ import {
   submitAppealInStore,
   decideAppealInStore,
   approvePendingDeviceInStore,
+  signUpStudentInStore,
+  loginStudentInStore,
+  googleAuthStudentInStore,
+  requestPasswordResetInStore,
+  confirmPasswordResetInStore,
   type ChannelRecord,
   type PublicPostView,
   type PublicReplyView,
@@ -466,9 +477,14 @@ export async function dbGetMeAndNotifications(userId: string) {
   }
   return withAuthenticatedUser(userId, async (client) => {
     const pRes = await client.query(`SELECT * FROM feed.get_my_profile()`);
+    const extraRes = await client.query(
+      `SELECT username, index_number, auth_provider, index_verified_at FROM private.profiles WHERE id = $1::uuid`,
+      [userId]
+    );
     const nRes = await client.query(`SELECT * FROM feed.list_notifications(50)`);
     const p = pRes.rows[0];
     if (!p) throw new Error('forbidden');
+    const extra = extraRes.rows[0] ?? {};
 
     const notifications: NotificationRecord[] = nRes.rows.map((r) => ({
       id: Number(r.id),
@@ -481,6 +497,13 @@ export async function dbGetMeAndNotifications(userId: string) {
 
     return {
       profile: {
+        username: extra.username ? String(extra.username) : null,
+        indexNumber: extra.index_number ? String(extra.index_number) : null,
+        authProvider: (extra.auth_provider ? String(extra.auth_provider) : 'otp') as
+          | 'password'
+          | 'google'
+          | 'otp',
+        indexVerified: Boolean(extra.index_verified_at),
         status: String(p.status),
         statusUntil: p.status_until ? new Date(String(p.status_until)).toISOString() : null,
         karma: Number(p.karma),
@@ -1086,6 +1109,404 @@ export async function dbApprovePendingDevice(input: {
       status: 'trusted' as const,
       approvedAt: new Date().toISOString(),
     };
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbSignUpStudent(input: {
+  username: string;
+  indexNumber: string;
+  password: string;
+  email?: string;
+  rawDeviceToken: string;
+  pepper: string;
+}) {
+  if (!shouldUseLiveDb()) {
+    return signUpStudentInStore(input);
+  }
+
+  const cleanUsername = input.username.trim().toLowerCase();
+  const cleanIndex = normalizeUpsaIndexNumber(input.indexNumber);
+  const cleanEmail = (
+    input.email?.trim() || `${cleanIndex.replace(/[^A-Z0-9]/gi, '').toLowerCase()}@st.upsa.edu.gh`
+  ).toLowerCase();
+  const passwordHash = hashPassword(input.password, input.pepper);
+  const deviceHash = hashDeviceToken(input.rawDeviceToken, input.pepper);
+
+  const client = await getPgPool().connect();
+  try {
+    await client.query('BEGIN');
+
+    const dupRes = await client.query(
+      `SELECT id FROM private.profiles
+       WHERE lower(username) = lower($1::text)
+          OR upper(index_number) = upper($2::text)
+          OR lower(email) = lower($3::text)
+       LIMIT 1`,
+      [cleanUsername, cleanIndex, cleanEmail]
+    );
+    if (dupRes.rows.length > 0) {
+      throw new Error('student_already_registered');
+    }
+
+    const userId = crypto.randomUUID();
+    await client.query(
+      `INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+       VALUES ($1::uuid, $2::text, jsonb_build_object('username', $3::text, 'index_number', $4::text), now(), now())
+       ON CONFLICT (id) DO NOTHING`,
+      [userId, cleanEmail, cleanUsername, cleanIndex]
+    );
+
+    await client.query(
+      `INSERT INTO private.profiles (
+         id, email, username, index_number, password_hash, auth_provider, index_verified_at,
+         status, karma, zone_id, zone_verified_until, is_admin, can_moderate, can_unmask, adult_confirmed_at
+       )
+       VALUES (
+         $1::uuid, $2::citext, $3::citext, $4::citext, $5::text, 'password', now(),
+         'active', 0, 1, now() + interval '15 minutes', false, false, false, now()
+       )`,
+      [userId, cleanEmail, cleanUsername, cleanIndex, passwordHash]
+    );
+
+    for (const doc of ['terms', 'privacy', 'community_guidelines'] as const) {
+      await client.query(
+        `INSERT INTO private.consents (user_id, document, version)
+         VALUES ($1::uuid, $2::text, '1.0')
+         ON CONFLICT (user_id, document, version) DO NOTHING`,
+        [userId, doc]
+      );
+    }
+
+    const devRes = await client.query(
+      `SELECT private.register_or_check_device($1::uuid, $2::text) AS status`,
+      [userId, deviceHash]
+    );
+    const deviceStatus = (devRes.rows[0]?.status ?? 'trusted') as 'trusted' | 'pending';
+
+    await client.query('COMMIT');
+    return {
+      userId,
+      username: cleanUsername,
+      indexNumber: cleanIndex,
+      email: cleanEmail,
+      authProvider: 'password' as const,
+      indexVerified: true,
+      deviceStatus,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbLoginStudent(input: {
+  identifier: string;
+  password: string;
+  rawDeviceToken: string;
+  pepper: string;
+}) {
+  if (!shouldUseLiveDb()) {
+    return loginStudentInStore(input);
+  }
+
+  const cleanId = input.identifier.trim();
+  const normalizedIdx = normalizeUpsaIndexNumber(cleanId);
+  const deviceHash = hashDeviceToken(input.rawDeviceToken, input.pepper);
+
+  const client = await getPgPool().connect();
+  try {
+    const res = await client.query(
+      `SELECT id, email, username, index_number, password_hash, auth_provider, index_verified_at, status
+       FROM private.profiles
+       WHERE lower(username) = lower($1::text)
+          OR upper(index_number) = upper($2::text)
+          OR lower(email) = lower($1::text)
+       LIMIT 1`,
+      [cleanId, normalizedIdx]
+    );
+
+    const row = res.rows[0];
+    if (!row || !row.password_hash) {
+      throw new Error('invalid_credentials');
+    }
+
+    if (!verifyPassword(input.password, String(row.password_hash), input.pepper)) {
+      throw new Error('invalid_credentials');
+    }
+
+    if (row.status === 'banned' || row.status === 'deleted') {
+      throw new Error(`account_${String(row.status)}`);
+    }
+
+    await client.query(
+      `UPDATE private.profiles
+       SET zone_id = COALESCE(zone_id, 1),
+           zone_verified_until = GREATEST(COALESCE(zone_verified_until, now()), now() + interval '15 minutes'),
+           last_seen_on = current_date
+       WHERE id = $1::uuid`,
+      [row.id]
+    );
+
+    const devRes = await client.query(
+      `SELECT private.register_or_check_device($1::uuid, $2::text) AS status`,
+      [row.id, deviceHash]
+    );
+    const deviceStatus = (devRes.rows[0]?.status ?? 'trusted') as 'trusted' | 'pending';
+
+    return {
+      userId: String(row.id),
+      username: row.username ? String(row.username) : null,
+      indexNumber: row.index_number ? String(row.index_number) : null,
+      email: String(row.email),
+      authProvider: (row.auth_provider ? String(row.auth_provider) : 'password') as
+        | 'password'
+        | 'google'
+        | 'otp',
+      indexVerified: Boolean(row.index_verified_at),
+      deviceStatus,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbGoogleAuthStudent(input: {
+  googleEmail: string;
+  username?: string;
+  indexNumber?: string;
+  rawDeviceToken: string;
+  pepper: string;
+}) {
+  if (!shouldUseLiveDb()) {
+    return googleAuthStudentInStore(input);
+  }
+
+  const cleanEmail = input.googleEmail.trim().toLowerCase();
+  const cleanIdx = input.indexNumber ? normalizeUpsaIndexNumber(input.indexNumber) : null;
+  const deviceHash = hashDeviceToken(input.rawDeviceToken, input.pepper);
+
+  const client = await getPgPool().connect();
+  try {
+    await client.query('BEGIN');
+
+    const existingRes = await client.query(
+      `SELECT id, email, username, index_number, index_verified_at
+       FROM private.profiles
+       WHERE lower(email) = lower($1::text)
+          OR ($2::text IS NOT NULL AND upper(index_number) = upper($2::text))
+       LIMIT 1`,
+      [cleanEmail, cleanIdx]
+    );
+
+    let userId: string;
+    let username: string;
+    let indexNumber: string | null;
+
+    if (existingRes.rows[0]) {
+      const row = existingRes.rows[0];
+      userId = String(row.id);
+      username = row.username
+        ? String(row.username)
+        : cleanEmail.split('@')[0]?.replace(/[^a-z0-9_]/gi, '_') ?? 'student';
+      indexNumber = row.index_number ? String(row.index_number) : cleanIdx;
+
+      await client.query(
+        `UPDATE private.profiles
+         SET auth_provider = 'google',
+             index_number = COALESCE(index_number, $2::citext),
+             index_verified_at = COALESCE(index_verified_at, CASE WHEN $2::text IS NOT NULL THEN now() ELSE NULL END),
+             zone_id = COALESCE(zone_id, 1),
+             zone_verified_until = GREATEST(COALESCE(zone_verified_until, now()), now() + interval '15 minutes')
+         WHERE id = $1::uuid`,
+        [userId, cleanIdx]
+      );
+    } else {
+      if (!cleanIdx) {
+        throw new Error('index_required_for_google_signup');
+      }
+      userId = crypto.randomUUID();
+      const rawUser = (input.username?.trim() || cleanEmail.split('@')[0] || 'upsa_student')
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .slice(0, 20);
+      username = `${rawUser}_${cleanIdx.slice(-4).toLowerCase()}`;
+      indexNumber = cleanIdx;
+
+      await client.query(
+        `INSERT INTO auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+         VALUES ($1::uuid, $2::text, jsonb_build_object('username', $3::text, 'index_number', $4::text, 'provider', 'google'), now(), now())
+         ON CONFLICT (id) DO NOTHING`,
+        [userId, cleanEmail, username, cleanIdx]
+      );
+
+      await client.query(
+        `INSERT INTO private.profiles (
+           id, email, username, index_number, auth_provider, index_verified_at,
+           status, karma, zone_id, zone_verified_until, is_admin, can_moderate, can_unmask, adult_confirmed_at
+         )
+         VALUES (
+           $1::uuid, $2::citext, $3::citext, $4::citext, 'google', now(),
+           'active', 0, 1, now() + interval '15 minutes', false, false, false, now()
+         )`,
+        [userId, cleanEmail, username, cleanIdx]
+      );
+
+      for (const doc of ['terms', 'privacy', 'community_guidelines'] as const) {
+        await client.query(
+          `INSERT INTO private.consents (user_id, document, version)
+           VALUES ($1::uuid, $2::text, '1.0')
+           ON CONFLICT (user_id, document, version) DO NOTHING`,
+          [userId, doc]
+        );
+      }
+    }
+
+    const devRes = await client.query(
+      `SELECT private.register_or_check_device($1::uuid, $2::text) AS status`,
+      [userId, deviceHash]
+    );
+    const deviceStatus = (devRes.rows[0]?.status ?? 'trusted') as 'trusted' | 'pending';
+
+    await client.query('COMMIT');
+    return {
+      userId,
+      username,
+      indexNumber,
+      email: cleanEmail,
+      authProvider: 'google' as const,
+      indexVerified: Boolean(indexNumber),
+      deviceStatus,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbRequestPasswordReset(input: {
+  identifier: string;
+  pepper: string;
+}) {
+  if (!shouldUseLiveDb()) {
+    return requestPasswordResetInStore(input);
+  }
+
+  const cleanId = input.identifier.trim();
+  const normalizedIdx = normalizeUpsaIndexNumber(cleanId);
+
+  const client = await getPgPool().connect();
+  try {
+    const res = await client.query(
+      `SELECT id, email, index_number
+       FROM private.profiles
+       WHERE lower(username) = lower($1::text)
+          OR upper(index_number) = upper($2::text)
+          OR lower(email) = lower($1::text)
+       LIMIT 1`,
+      [cleanId, normalizedIdx]
+    );
+    const row = res.rows[0];
+    if (!row) {
+      throw new Error('account_not_found');
+    }
+
+    const userId = String(row.id);
+    const seedHash = hashDeviceToken(`reset:${userId}:${Date.now()}`, input.pepper);
+    const numericCode = String((Number.parseInt(seedHash.slice(0, 8), 16) % 900000) + 100000);
+    const codeHash = hashDeviceToken(`reset_code:${userId}:${numericCode}`, input.pepper);
+
+    await client.query(
+      `INSERT INTO private.password_reset_tokens (user_id, code_hash, expires_at)
+       VALUES ($1::uuid, $2::text, now() + interval '15 minutes')
+       ON CONFLICT (user_id) DO UPDATE
+       SET code_hash = EXCLUDED.code_hash,
+           expires_at = EXCLUDED.expires_at,
+           created_at = now()`,
+      [userId, codeHash]
+    );
+
+    const maskedTarget = row.index_number
+      ? `Index ***${String(row.index_number).slice(-4)}`
+      : String(row.email).replace(/(^..).*(@.*$)/, '$1***$2');
+
+    return {
+      userId,
+      maskedTarget,
+      devResetCode: numericCode,
+      expiresInMinutes: 15,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbConfirmPasswordReset(input: {
+  identifier: string;
+  resetCode: string;
+  newPassword: string;
+  pepper: string;
+}) {
+  if (!shouldUseLiveDb()) {
+    return confirmPasswordResetInStore(input);
+  }
+
+  const cleanId = input.identifier.trim();
+  const normalizedIdx = normalizeUpsaIndexNumber(cleanId);
+
+  const client = await getPgPool().connect();
+  try {
+    await client.query('BEGIN');
+
+    const res = await client.query(
+      `SELECT p.id, p.username, p.index_number, t.code_hash, t.expires_at
+       FROM private.profiles p
+       JOIN private.password_reset_tokens t ON t.user_id = p.id
+       WHERE (lower(p.username) = lower($1::text)
+          OR upper(p.index_number) = upper($2::text)
+          OR lower(p.email) = lower($1::text))
+         AND t.expires_at > now()
+       LIMIT 1`,
+      [cleanId, normalizedIdx]
+    );
+
+    const row = res.rows[0];
+    if (!row) {
+      throw new Error('invalid_reset_code');
+    }
+
+    const userId = String(row.id);
+    const candidateHash = hashDeviceToken(
+      `reset_code:${userId}:${input.resetCode.trim()}`,
+      input.pepper
+    );
+    if (candidateHash !== String(row.code_hash)) {
+      throw new Error('invalid_reset_code');
+    }
+
+    const passwordHash = hashPassword(input.newPassword, input.pepper);
+    await client.query(
+      `UPDATE private.profiles SET password_hash = $1::text WHERE id = $2::uuid`,
+      [passwordHash, userId]
+    );
+    await client.query(`DELETE FROM private.password_reset_tokens WHERE user_id = $1::uuid`, [
+      userId,
+    ]);
+
+    await client.query('COMMIT');
+    return {
+      userId,
+      username: row.username ? String(row.username) : null,
+      indexNumber: row.index_number ? String(row.index_number) : null,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
   } finally {
     client.release();
   }

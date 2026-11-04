@@ -15,6 +15,8 @@ const serverEnvSchema = clientEnvSchema.extend({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:support@upsapulse.org'),
   SENTRY_DSN: z.string().optional(),
+  UPSA_INDEX_VERIFICATION_API_KEY: z.string().optional(),
+  UPSA_INDEX_VERIFICATION_API_URL: z.string().optional(),
   ENABLE_UNMASK_WORKFLOW: z
     .enum(['true', 'false'])
     .default('false')
@@ -41,6 +43,8 @@ export function getServerEnv() {
     VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
     VAPID_SUBJECT: process.env.VAPID_SUBJECT,
     SENTRY_DSN: process.env.SENTRY_DSN,
+    UPSA_INDEX_VERIFICATION_API_KEY: process.env.UPSA_INDEX_VERIFICATION_API_KEY,
+    UPSA_INDEX_VERIFICATION_API_URL: process.env.UPSA_INDEX_VERIFICATION_API_URL,
     ENABLE_UNMASK_WORKFLOW: process.env.ENABLE_UNMASK_WORKFLOW,
   });
 }

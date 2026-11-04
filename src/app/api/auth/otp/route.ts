@@ -1,13 +1,188 @@
 import { NextRequest } from 'next/server';
-import { otpVerifySchema, signUpConsentSchema } from '@/lib/validation/schemas';
-import { isAllowedEmailDomain } from '@/lib/domain/pulse-engine';
+import {
+  forgotPasswordRequestSchema,
+  forgotPasswordResetSchema,
+  googleAuthSchema,
+  otpVerifySchema,
+  signUpConsentSchema,
+  studentLoginSchema,
+  studentSignUpSchema,
+} from '@/lib/validation/schemas';
+import { isAllowedEmailDomain, verifyStudentIndexWithApiKey } from '@/lib/domain/pulse-engine';
 import { registerSignUpAndDeviceInStore } from '@/lib/store/pulse-store';
+import {
+  dbConfirmPasswordReset,
+  dbGoogleAuthStudent,
+  dbLoginStudent,
+  dbRequestPasswordReset,
+  dbSignUpStudent,
+} from '@/lib/db/postgres';
 import { getServerEnv } from '@/lib/env';
 import { apiError, apiSuccess, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const env = getServerEnv();
+
+    if (body.step === 'verify_index') {
+      const rawIndex = typeof body.indexNumber === 'string' ? body.indexNumber : '';
+      const check = await verifyStudentIndexWithApiKey(
+        rawIndex,
+        env.UPSA_INDEX_VERIFICATION_API_KEY,
+        env.UPSA_INDEX_VERIFICATION_API_URL
+      );
+      if (!check.valid) {
+        return apiError(
+          check.reason ?? 'invalid_index_number',
+          'Unable to verify UPSA student index number. Check your 8–10 digit index number and try again.',
+          400
+        );
+      }
+      return apiSuccess(check);
+    }
+
+    if (body.step === 'signup') {
+      const parsed = studentSignUpSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiError(
+          'invalid_signup_input',
+          parsed.error.issues[0]?.message ??
+            'Enter a valid username, UPSA index number, password, and accept all three legal consents.',
+          400
+        );
+      }
+
+      const indexCheck = await verifyStudentIndexWithApiKey(
+        parsed.data.indexNumber,
+        env.UPSA_INDEX_VERIFICATION_API_KEY,
+        env.UPSA_INDEX_VERIFICATION_API_URL
+      );
+      if (!indexCheck.valid) {
+        return apiError(
+          indexCheck.reason ?? 'invalid_index_number',
+          'Invalid UPSA student index number. Enter a valid 8–10 digit UPSA index number (e.g. 10284912).',
+          400
+        );
+      }
+
+      const created = await dbSignUpStudent({
+        username: parsed.data.username,
+        indexNumber: indexCheck.normalizedIndex,
+        password: parsed.data.password,
+        email: parsed.data.email,
+        rawDeviceToken: parsed.data.deviceToken ?? 'default-browser-device-token',
+        pepper: env.DEVICE_HASH_PEPPER,
+      });
+
+      return apiSuccess(
+        {
+          ...created,
+          verificationMode: indexCheck.verificationMode,
+        },
+        201
+      );
+    }
+
+    if (body.step === 'login') {
+      const parsed = studentLoginSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiError(
+          'invalid_login_input',
+          parsed.error.issues[0]?.message ?? 'Enter your UPSA index number or username and password.',
+          400
+        );
+      }
+
+      const session = await dbLoginStudent({
+        identifier: parsed.data.identifier,
+        password: parsed.data.password,
+        rawDeviceToken: parsed.data.deviceToken ?? 'default-browser-device-token',
+        pepper: env.DEVICE_HASH_PEPPER,
+      });
+
+      return apiSuccess(session);
+    }
+
+    if (body.step === 'google') {
+      const parsed = googleAuthSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiError(
+          'invalid_google_input',
+          parsed.error.issues[0]?.message ?? 'Enter a valid Google account and UPSA index number.',
+          400
+        );
+      }
+
+      let normalizedIdx: string | undefined;
+      if (parsed.data.indexNumber) {
+        const indexCheck = await verifyStudentIndexWithApiKey(
+          parsed.data.indexNumber,
+          env.UPSA_INDEX_VERIFICATION_API_KEY,
+          env.UPSA_INDEX_VERIFICATION_API_URL
+        );
+        if (!indexCheck.valid) {
+          return apiError(
+            indexCheck.reason ?? 'invalid_index_number',
+            'Invalid UPSA student index number.',
+            400
+          );
+        }
+        normalizedIdx = indexCheck.normalizedIndex;
+      }
+
+      const session = await dbGoogleAuthStudent({
+        googleEmail: parsed.data.googleEmail,
+        username: parsed.data.username,
+        indexNumber: normalizedIdx,
+        rawDeviceToken: parsed.data.deviceToken ?? 'default-browser-device-token',
+        pepper: env.DEVICE_HASH_PEPPER,
+      });
+
+      return apiSuccess(session);
+    }
+
+    if (body.step === 'forgot_password_request') {
+      const parsed = forgotPasswordRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiError(
+          'invalid_identifier',
+          parsed.error.issues[0]?.message ?? 'Enter your UPSA index number or username.',
+          400
+        );
+      }
+
+      const resetReq = await dbRequestPasswordReset({
+        identifier: parsed.data.identifier,
+        pepper: env.DEVICE_HASH_PEPPER,
+      });
+
+      return apiSuccess(resetReq);
+    }
+
+    if (body.step === 'forgot_password_reset') {
+      const parsed = forgotPasswordResetSchema.safeParse(body);
+      if (!parsed.success) {
+        return apiError(
+          'invalid_reset_input',
+          parsed.error.issues[0]?.message ??
+            'Enter your UPSA index number/username, 6-digit recovery code, and a new password.',
+          400
+        );
+      }
+
+      const resetResult = await dbConfirmPasswordReset({
+        identifier: parsed.data.identifier,
+        resetCode: parsed.data.resetCode,
+        newPassword: parsed.data.newPassword,
+        pepper: env.DEVICE_HASH_PEPPER,
+      });
+
+      return apiSuccess({
+        ...resetResult,
+        passwordUpdated: true,
+      });
+    }
 
     if (body.step === 'request_otp') {
       const parsed = signUpConsentSchema.safeParse(body);
@@ -39,7 +214,6 @@ export async function POST(req: NextRequest) {
       return apiError('invalid_otp', 'Enter a valid 6-digit verification code.', 400);
     }
 
-    const env = getServerEnv();
     const registration = registerSignUpAndDeviceInStore({
       email: verifyParsed.data.email,
       rawDeviceToken: verifyParsed.data.deviceToken ?? 'default-browser-device-token',
