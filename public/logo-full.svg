@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" role="img" aria-label="UPSA Pulse Campus Feed Logo">
+  <rect x="4" y="8" width="80" height="80" rx="20" fill="#0B2A5B"/>
+  <circle cx="44" cy="43" r="29" fill="none" stroke="#D9A21B" stroke-width="2.5" stroke-opacity="0.4"/>
+  <path d="M44 21c-12.2 0-22 9.8-22 22 0 15.4 19 30.3 20.9 31.8a1.8 1.8 0 0 0 2.2 0C47 73.3 66 58.4 66 43c0-12.2-9.8-22-22-22z" fill="#D9A21B"/>
+  <circle cx="44" cy="43" r="9.5" fill="#0B2A5B"/>
+  <circle cx="44" cy="43" r="3.8" fill="#D9A21B"/>
+  <text x="102" y="47" font-family="Figtree, system-ui, -apple-system, sans-serif" font-size="30" font-weight="800" fill="#0B2A5B" letter-spacing="-0.5">UPSA Pulse</text>
+  <rect x="282" y="24" width="124" height="26" rx="13" fill="#D9A21B"/>
+  <text x="344" y="41" text-anchor="middle" font-family="Figtree, system-ui, sans-serif" font-size="12" font-weight="800" fill="#0B2A5B" letter-spacing="0.6">CAMPUS PWA</text>
+  <text x="102" y="72" font-family="Figtree, system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#5B6678">Main Campus · Hostel A · Hostel B · Hostel C</text>
+</svg>

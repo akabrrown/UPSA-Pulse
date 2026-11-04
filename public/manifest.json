@@ -1,19 +1,84 @@
 {
+  "id": "/",
   "name": "UPSA Pulse",
   "short_name": "Pulse",
-  "description": "Location-gated, pseudonymous campus feed for verified UPSA students",
+  "description": "Location-gated, pseudonymous campus feed for verified UPSA students across Main Campus, Hostel A, Hostel B, and Hostel C.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#F7F8FB",
   "theme_color": "#0B2A5B",
   "orientation": "portrait-primary",
+  "categories": ["education", "social", "utilities"],
   "icons": [
     {
+      "src": "/icons/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icon.svg",
-      "sizes": "192x192 512x512",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/feed-mobile.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "UPSA Pulse Campus & Hostel Feed"
+    },
+    {
+      "src": "/screenshots/places-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "UPSA Pulse All 4 Campus Places View"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ask Campus Question",
+      "short_name": "Ask",
+      "description": "Post an Ask to students near you on UPSA Campus",
+      "url": "/?compose=ask",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Browse Campus Channels",
+      "short_name": "Channels",
+      "description": "View Academics, Hostels, Food & Chop, and Events",
+      "url": "/?tab=channels",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }
-

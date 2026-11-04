@@ -975,8 +975,12 @@ export function PulseApp() {
     return (
       <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-between max-w-[640px] mx-auto px-4 py-8">
         <div className="flex items-center justify-between">
-          <div className="inline-flex items-center gap-2 font-bold text-[18px] text-[var(--text-heading)]">
-            <span className="w-3 h-3 rounded-full bg-[#D9A21B]" aria-hidden="true" />
+          <div className="inline-flex items-center gap-2.5 font-bold text-[18px] text-[var(--text-heading)]">
+            <img
+              src="/images/upsa-pulse-emblem.jpg"
+              alt="UPSA Pulse Emblem"
+              className="w-9 h-9 rounded-[8px] object-cover border border-[#D9A21B]/40"
+            />
             <span>UPSA Pulse</span>
           </div>
           {welcomeSlide > 0 && (
@@ -990,25 +994,32 @@ export function PulseApp() {
           )}
         </div>
 
-        <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-6 space-y-4 my-auto">
-          <div className="text-[13px] font-semibold text-[#8A6200]">
-            Step {welcomeSlide + 1} of 3
-          </div>
-          <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
-            {currentCard.title}
-          </h1>
-          <p className="text-[16px] leading-[24px] text-[var(--text-secondary)]">
-            {currentCard.body}
-          </p>
-          <div className="flex items-center gap-2 pt-2" role="tablist" aria-label="Onboarding steps">
-            {[0, 1, 2].map((idx) => (
-              <span
-                key={idx}
-                className={`h-2 rounded-full transition-all ${
-                  idx === welcomeSlide ? 'w-6 bg-[#0B2A5B]' : 'w-2 bg-[#D5DAE3]'
-                }`}
-              />
-            ))}
+        <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] overflow-hidden my-auto">
+          <img
+            src="/images/upsa-pulse-campus-hero.jpg"
+            alt="UPSA Campus and Hostel Pulse Network"
+            className="w-full h-48 sm:h-56 object-cover border-b border-[var(--border-color)]"
+          />
+          <div className="p-6 space-y-4">
+            <div className="text-[13px] font-semibold text-[#8A6200]">
+              Step {welcomeSlide + 1} of 3
+            </div>
+            <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
+              {currentCard.title}
+            </h1>
+            <p className="text-[16px] leading-[24px] text-[var(--text-secondary)]">
+              {currentCard.body}
+            </p>
+            <div className="flex items-center gap-2 pt-2" role="tablist" aria-label="Onboarding steps">
+              {[0, 1, 2].map((idx) => (
+                <span
+                  key={idx}
+                  className={`h-2 rounded-full transition-all ${
+                    idx === welcomeSlide ? 'w-6 bg-[#0B2A5B]' : 'w-2 bg-[#D5DAE3]'
+                  }`}
+                />
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1704,10 +1715,11 @@ export function PulseApp() {
       <header className="sticky top-0 z-30 bg-[#0B2A5B] text-white border-b border-[#1C4A8F]">
         <div className="max-w-[640px] mx-auto px-4 pt-3 pb-0">
           <div className="flex items-center justify-between gap-2 pb-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                aria-hidden="true"
-                className="w-3 h-3 rounded-full bg-[#D9A21B] shrink-0"
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src="/images/upsa-pulse-emblem.jpg"
+                alt="UPSA Pulse"
+                className="w-8 h-8 rounded-[6px] object-cover border border-[#D9A21B]/50 shrink-0"
               />
               <div className="truncate">
                 <span className="font-bold text-[17px] tracking-tight">UPSA Pulse</span>
@@ -2873,6 +2885,53 @@ export function PulseApp() {
                 Submit Data Request
               </button>
             </form>
+
+            {/* Legal Pages Navigation — LEGAL-1 */}
+            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="text-[16px] font-bold text-[var(--text-heading)]">
+                  PWA Brand Assets, App Icons &amp; Splash Screens
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#DCE6F5] text-[#0B2A5B] text-[12px] font-bold">
+                  Installable PWA Ready
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
+                  <img
+                    src="/images/upsa-pulse-emblem.jpg"
+                    alt="UPSA Pulse App Crest"
+                    className="w-14 h-14 rounded-[10px] object-cover shrink-0 border border-[#D9A21B]/40"
+                  />
+                  <div className="text-[12px]">
+                    <div className="font-bold text-[var(--text-heading)]">App Crest &amp; Icons</div>
+                    <div className="text-[var(--text-secondary)]">192px, 512px, Maskable &amp; Apple Touch</div>
+                  </div>
+                </div>
+                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
+                  <img
+                    src="/splash/apple-splash-750x1334.png"
+                    alt="UPSA Pulse Splash Screen"
+                    className="w-10 h-14 rounded-[6px] object-cover shrink-0 border border-[#0B2A5B]"
+                  />
+                  <div className="text-[12px]">
+                    <div className="font-bold text-[var(--text-heading)]">PWA Splash Screens</div>
+                    <div className="text-[var(--text-secondary)]">iOS &amp; Android WebAPK Startup</div>
+                  </div>
+                </div>
+                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
+                  <img
+                    src="/images/upsa-pulse-campus-hero.jpg"
+                    alt="UPSA Campus Hero Illustration"
+                    className="w-16 h-14 rounded-[6px] object-cover shrink-0 border border-[var(--border-color)]"
+                  />
+                  <div className="text-[12px]">
+                    <div className="font-bold text-[var(--text-heading)]">Campus Hero Banner</div>
+                    <div className="text-[var(--text-secondary)]">Onboarding &amp; OpenGraph Share</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Legal Pages Navigation — LEGAL-1 */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">

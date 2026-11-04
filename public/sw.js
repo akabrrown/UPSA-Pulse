@@ -1,5 +1,14 @@
-const CACHE_NAME = 'upsa-pulse-shell-v2';
-const OFFLINE_ASSETS = ['/', '/manifest.json'];
+const CACHE_NAME = 'upsa-pulse-shell-v3';
+const OFFLINE_ASSETS = [
+  '/',
+  '/manifest.json',
+  '/icon.svg',
+  '/logo-mark.svg',
+  '/logo-full.svg',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/apple-touch-icon.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -62,7 +71,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: '/icon.svg',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/badge-72x72.png',
       data: { url: payload.url || '/' },
     })
   );
