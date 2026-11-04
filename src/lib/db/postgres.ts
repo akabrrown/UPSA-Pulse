@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { createSupabaseServiceClient } from '@/lib/supabase/server';
 import {
   hashDeviceToken,
   hashPassword,
@@ -80,6 +81,36 @@ const SEEDED_CAMPUS_USERS = new Set([
   '44444444-4444-4444-8444-444444444444',
   '55555555-5555-4555-8555-555555555555',
 ]);
+
+/**
+ * Dispatches real-time events to connected campus clients via Supabase Realtime broadcast channels.
+ * Non-blocking: failures are logged without disrupting database mutations.
+ */
+export async function broadcastRealtimeEvent(
+  zoneId: number | 'all',
+  event: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  if (!shouldUseLiveDb()) return;
+  try {
+    const supabase = createSupabaseServiceClient();
+    const channels = [`zone:${zoneId}`];
+    if (zoneId !== 'all') {
+      channels.push('zone:all');
+    }
+    for (const channelName of channels) {
+      const channel = supabase.channel(channelName);
+      await channel.send({
+        type: 'broadcast',
+        event,
+        payload,
+      });
+      await supabase.removeChannel(channel);
+    }
+  } catch (err) {
+    console.warn('[Realtime Broadcast] Non-fatal notification failure:', err);
+  }
+}
 
 /**
  * Runs a query inside a transaction impersonating `authenticated` with `auth.uid() = userId`
@@ -310,7 +341,7 @@ export async function dbCreatePost(
     if (zNameRes.rows[0]?.name) {
       targetZoneName = String(zNameRes.rows[0].name);
     }
-    return {
+    const createdPost = {
       id: String(row.post_id),
       zoneId: targetZoneId,
       zoneName: targetZoneName,
@@ -325,9 +356,15 @@ export async function dbCreatePost(
       answeredReplyId: null,
       createdAt: new Date().toISOString(),
       isMine: true,
-      myVote: 0,
+      myVote: 0 as const,
       showSupportCard: Boolean(row.show_support_card),
     };
+    void broadcastRealtimeEvent(targetZoneId, 'post_created', {
+      postId: createdPost.id,
+      zoneId: targetZoneId,
+      channelId: createdPost.channelId,
+    });
+    return createdPost;
   });
 }
 
@@ -399,7 +436,7 @@ export async function dbCreateReply(
       body,
     ]);
     const row = res.rows[0];
-    return {
+    const createdReply = {
       id: String(row.reply_id),
       postId,
       aliasNo: Number(row.reply_alias),
@@ -407,10 +444,16 @@ export async function dbCreateReply(
       score: 0,
       createdAt: new Date().toISOString(),
       isMine: true,
-      myVote: 0,
+      myVote: 0 as const,
       status: row.reply_status as ContentStatus,
       showSupportCard: Boolean(row.show_support_card),
     };
+    void broadcastRealtimeEvent('all', 'reply_created', {
+      postId,
+      replyId: createdReply.id,
+      aliasNo: createdReply.aliasNo,
+    });
+    return createdReply;
   });
 }
 
@@ -429,9 +472,18 @@ export async function dbMarkAnswer(userId: string, replyId: string): Promise<voi
     markAnswerInStore(userId, replyId);
     return;
   }
+  let postId: string | null = null;
   await withAuthenticatedUser(userId, async (client) => {
     await client.query(`SELECT feed.mark_answer($1::uuid)`, [replyId]);
+    const pRes = await client.query(`SELECT post_id FROM private.replies WHERE id = $1::uuid`, [replyId]);
+    postId = pRes.rows[0]?.post_id ? String(pRes.rows[0].post_id) : null;
   });
+  if (postId) {
+    void broadcastRealtimeEvent('all', 'post_answered', {
+      postId,
+      answeredReplyId: replyId,
+    });
+  }
 }
 
 export async function dbCastVote(
@@ -441,13 +493,22 @@ export async function dbCastVote(
   if (!shouldUseLiveDb()) {
     return castVoteInStore(userId, input);
   }
+  let currentScore = 0;
   await withAuthenticatedUser(userId, async (client) => {
     await client.query(
       `SELECT feed.cast_vote($1::private.target_type, $2::uuid, $3::smallint)`,
       [input.targetType, input.targetId, input.value]
     );
+    const table = input.targetType === 'post' ? 'private.posts' : 'private.replies';
+    const sRes = await client.query(`SELECT score FROM ${table} WHERE id = $1::uuid`, [input.targetId]);
+    currentScore = Number(sRes.rows[0]?.score ?? 0);
   });
-  return { myVote: input.value };
+  void broadcastRealtimeEvent('all', 'vote_updated', {
+    targetType: input.targetType,
+    targetId: input.targetId,
+    score: currentScore,
+  });
+  return { myVote: input.value, score: currentScore };
 }
 
 export async function dbReportContent(

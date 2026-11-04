@@ -331,7 +331,7 @@ export function PulseApp() {
     void loadMeAndAlerts();
   }, [loadFeed, loadMeAndAlerts]);
 
-  // Supabase Realtime broadcast listener on `zone:1` (TDD Section 7)
+  // Supabase Realtime broadcast listener on place channels (TDD Section 7)
   useEffect(() => {
     let supabase: ReturnType<typeof createSupabaseBrowserClient> | null = null;
     try {
@@ -340,10 +340,14 @@ export function PulseApp() {
       return;
     }
 
+    const targetChannel = selectedZoneId ? `zone:${selectedZoneId}` : 'zone:all';
     const channel = supabase
-      .channel('zone:1')
-      .on('broadcast', { event: 'post_created' }, () => {
-        setNewPostsCount((c) => c + 1);
+      .channel(`realtime-feed-${targetChannel}`)
+      .on('broadcast', { event: 'post_created' }, (msg: { payload?: { zoneId?: number } }) => {
+        const postZoneId = msg?.payload?.zoneId;
+        if (!selectedZoneId || selectedZoneId === postZoneId) {
+          setNewPostsCount((c) => c + 1);
+        }
       })
       .on(
         'broadcast',
@@ -397,7 +401,7 @@ export function PulseApp() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeThreadId, loadThread]);
+  }, [activeThreadId, loadThread, selectedZoneId]);
 
   const handleVote = async (
     targetType: 'post' | 'reply',
@@ -1781,16 +1785,6 @@ export function PulseApp() {
                       type="button"
                       onClick={() => {
                         setOverflowOpen(false);
-                        setNewPostsCount((c) => c + 2);
-                      }}
-                      className="w-full text-left px-4 py-2.5 text-[14px] hover:bg-[var(--surface-subtle)] cursor-pointer"
-                    >
-                      Simulate Realtime New Posts Pill
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOverflowOpen(false);
                         setWelcomeSlide(0);
                         setOnboardingStage('welcome');
                       }}
@@ -2809,14 +2803,14 @@ export function PulseApp() {
                     Private Student Credentials (Never visible on public posts)
                   </div>
                   <div className="text-[18px] font-bold text-[var(--text-heading)] mt-1">
-                    @{profileSummary?.username ?? 'efua_upsa'}{' '}
+                    @{profileSummary?.username ?? 'student'}{' '}
                     <span className="text-[14px] font-mono text-[#1C4A8F]">
-                      · Index #{profileSummary?.indexNumber ?? '10284001'}
+                      · Index #{profileSummary?.indexNumber ?? '—'}
                     </span>
                   </div>
                   <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
-                    Provider: {profileSummary?.authProvider ?? 'password'} · Index Verified:{' '}
-                    {profileSummary?.indexVerified !== false ? 'Yes (API Key Active)' : 'Pending'}
+                    Provider: {profileSummary?.authProvider ?? '—'} · Index Verified:{' '}
+                    {profileSummary?.indexVerified ? 'Yes (API Key Active)' : 'Pending'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -2851,7 +2845,7 @@ export function PulseApp() {
                   Private Campus Karma (Visible only to you)
                 </div>
                 <div className="text-[28px] font-bold text-[var(--text-heading)] mt-1">
-                  {profileSummary?.karma ?? 14}
+                  {profileSummary?.karma ?? 0}
                 </div>
                 <p className="text-[13px] text-[var(--text-secondary)] mt-1">
                   Net votes received on your posts and replies.

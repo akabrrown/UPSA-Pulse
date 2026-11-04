@@ -342,7 +342,7 @@ function createInitialState(): PulseState {
         indexVerifiedAt: nowIso,
         status: 'active',
         statusUntil: null,
-        karma: 14,
+        karma: 0,
         zoneId: 1,
         zoneVerifiedUntil: validWindowIso,
         isAdmin: false,
@@ -365,7 +365,7 @@ function createInitialState(): PulseState {
         indexVerifiedAt: nowIso,
         status: 'active',
         statusUntil: null,
-        karma: 27,
+        karma: 0,
         zoneId: 1,
         zoneVerifiedUntil: validWindowIso,
         isAdmin: false,
@@ -381,9 +381,14 @@ function createInitialState(): PulseState {
       {
         id: '33333333-3333-4333-8333-333333333333',
         email: 'ama@upsa.edu.gh',
+        username: 'ama_upsa',
+        indexNumber: '10284003',
+        passwordHash: null,
+        authProvider: 'password',
+        indexVerifiedAt: nowIso,
         status: 'active',
         statusUntil: null,
-        karma: 9,
+        karma: 0,
         zoneId: 1,
         zoneVerifiedUntil: validWindowIso,
         isAdmin: false,
@@ -401,7 +406,7 @@ function createInitialState(): PulseState {
         email: 'moderator@upsa.edu.gh',
         status: 'active',
         statusUntil: null,
-        karma: 5,
+        karma: 0,
         zoneId: 1,
         zoneVerifiedUntil: validWindowIso,
         isAdmin: true,
@@ -450,130 +455,9 @@ function createInitialState(): PulseState {
     ],
   ]);
 
-  const seedPost1Id = 'a0000000-0000-4000-8000-000000000001';
-  const seedPost2Id = 'a0000000-0000-4000-8000-000000000002';
-  const seedPost3Id = 'a0000000-0000-4000-8000-000000000003';
-  const seedReply1Id = 'b0000000-0000-4000-8000-000000000001';
-  const seedReply2Id = 'b0000000-0000-4000-8000-000000000002';
-
-  const t1 = new Date(Date.now() - 25 * 60 * 1000);
-  const t2 = new Date(Date.now() - 12 * 60 * 1000);
-  const t3 = new Date(Date.now() - 4 * 60 * 1000);
-
-  const posts = new Map<string, PostRecord>([
-    [
-      seedPost1Id,
-      {
-        id: seedPost1Id,
-        zoneId: 1,
-        channelId: 1,
-        authorId: '11111111-1111-4111-8111-111111111111',
-        kind: 'ask',
-        body: 'Level 100 freshers: where do we stamp our medical clearance form before Friday afternoon?',
-        status: 'published',
-        upvotes: 14,
-        downvotes: 1,
-        score: 13,
-        replyCount: 2,
-        hotScore: computeHotScore(13, t1),
-        answeredReplyId: seedReply1Id,
-        hiddenReason: null,
-        createdAt: t1.toISOString(),
-        lastActivityAt: t2.toISOString(),
-        archivedAt: null,
-      },
-    ],
-    [
-      seedPost2Id,
-      {
-        id: seedPost2Id,
-        zoneId: 1,
-        channelId: 3,
-        authorId: '22222222-2222-4222-8222-222222222222',
-        kind: 'post',
-        body: 'The jollof queue behind the Auditorium is moving fast right now and plantain is still hot.',
-        status: 'published',
-        upvotes: 9,
-        downvotes: 0,
-        score: 9,
-        replyCount: 0,
-        hotScore: computeHotScore(9, t2),
-        answeredReplyId: null,
-        hiddenReason: null,
-        createdAt: t2.toISOString(),
-        lastActivityAt: t2.toISOString(),
-        archivedAt: null,
-      },
-    ],
-    [
-      seedPost3Id,
-      {
-        id: seedPost3Id,
-        zoneId: 1,
-        channelId: 2,
-        authorId: '33333333-3333-4333-8333-333333333333',
-        kind: 'ask',
-        body: 'Which hostels near the East Gate have reliable water supply during exam weeks?',
-        status: 'published',
-        upvotes: 6,
-        downvotes: 0,
-        score: 6,
-        replyCount: 0,
-        hotScore: computeHotScore(6, t3),
-        answeredReplyId: null,
-        hiddenReason: null,
-        createdAt: t3.toISOString(),
-        lastActivityAt: t3.toISOString(),
-        archivedAt: null,
-      },
-    ],
-  ]);
-
-  const replies = new Map<string, ReplyRecord>([
-    [
-      seedReply1Id,
-      {
-        id: seedReply1Id,
-        postId: seedPost1Id,
-        authorId: '22222222-2222-4222-8222-222222222222',
-        aliasNo: 1,
-        body: 'Go to the University Clinic Annex first, then take the stamped slip to Room 104 in the Admin Block.',
-        status: 'published',
-        upvotes: 8,
-        downvotes: 0,
-        score: 8,
-        createdAt: t2.toISOString(),
-      },
-    ],
-    [
-      seedReply2Id,
-      {
-        id: seedReply2Id,
-        postId: seedPost1Id,
-        authorId: '33333333-3333-4333-8333-333333333333',
-        aliasNo: 2,
-        body: 'Go before 11:00 a.m. with your student ID receipt so you do not wait twice.',
-        status: 'published',
-        upvotes: 3,
-        downvotes: 0,
-        score: 3,
-        createdAt: t3.toISOString(),
-      },
-    ],
-  ]);
-
-  const threadAliases = new Map<string, Map<string, number>>([
-    [
-      seedPost1Id,
-      new Map([
-        ['11111111-1111-4111-8111-111111111111', 0],
-        ['22222222-2222-4222-8222-222222222222', 1],
-        ['33333333-3333-4333-8333-333333333333', 2],
-      ]),
-    ],
-    [seedPost2Id, new Map([['22222222-2222-4222-8222-222222222222', 0]])],
-    [seedPost3Id, new Map([['33333333-3333-4333-8333-333333333333', 0]])],
-  ]);
+  const posts = new Map<string, PostRecord>();
+  const replies = new Map<string, ReplyRecord>();
+  const threadAliases = new Map<string, Map<string, number>>();
 
   return {
     zones: DEFAULT_UPSA_ZONES.map((z) => ({
@@ -618,21 +502,7 @@ function createInitialState(): PulseState {
     moderationActions: [],
     unmaskRequests: [],
     auditLogs: [],
-    notifications: [
-      {
-        id: 1,
-        userId: '11111111-1111-4111-8111-111111111111',
-        type: 'reply',
-        payload: {
-          post_id: seedPost1Id,
-          reply_id: seedReply1Id,
-          alias_no: 1,
-          snippet: 'Go to the University Clinic Annex first, then take the stamped slip to Room 104',
-        },
-        readAt: null,
-        createdAt: t2.toISOString(),
-      },
-    ],
+    notifications: [],
     pushSubscriptions: [],
     dataRequests: [],
     appeals: [],

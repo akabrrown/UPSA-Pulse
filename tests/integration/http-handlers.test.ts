@@ -313,10 +313,24 @@ describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
   });
 
   it('verifies appeals two-moderator rule (F15), device approval (F2), and case lookup without email leak (ADMIN-1)', async () => {
+    const postRes = await createPost(
+      makeReq('http://localhost:3000/api/posts', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          channelId: 1,
+          kind: 'post',
+          body: 'UPSA SRC study group invite link here: https://chat.whatsapp.com/test',
+        },
+      })
+    );
+    expect(postRes.status).toBe(201);
+    const postJson = await postRes.json();
+
     const moderatorB = '55555555-5555-4555-8555-555555555555';
     const action = applyModerationActionInStore(moderatorB, {
       targetType: 'post',
-      targetId: 'a0000000-0000-4000-8000-000000000001',
+      targetId: postJson.data.post.id,
       action: 'suspend',
       reason: 'Suspended for repeated spam links',
       suspendDays: 7,
