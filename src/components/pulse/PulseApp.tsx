@@ -10,6 +10,8 @@ import {
   Bell,
   CheckCircle2,
   Compass,
+  Eye,
+  EyeOff,
   Flag,
   HeartHandshake,
   Layers,
@@ -130,13 +132,16 @@ export function PulseApp() {
   const [signupUsername, setSignupUsername] = useState<string>('');
   const [signupIndexNumber, setSignupIndexNumber] = useState<string>('');
   const [signupPassword, setSignupPassword] = useState<string>('');
+  const [showSignupPassword, setShowSignupPassword] = useState<boolean>(false);
   const [signupEmail, setSignupEmail] = useState<string>('');
   const [indexVerifiedBadge, setIndexVerifiedBadge] = useState<string | null>(null);
   const [loginIdentifier, setLoginIdentifier] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
+  const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
   const [forgotIdentifier, setForgotIdentifier] = useState<string>('');
   const [forgotResetCode, setForgotResetCode] = useState<string>('');
   const [forgotNewPassword, setForgotNewPassword] = useState<string>('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState<boolean>(false);
   const [forgotStep, setForgotStep] = useState<'request' | 'reset'>('request');
   const [forgotStatusMsg, setForgotStatusMsg] = useState<string | null>(null);
   const [adultConfirmed, setAdultConfirmed] = useState<boolean>(false);
@@ -1242,16 +1247,31 @@ export function PulseApp() {
               >
                 Password
               </label>
-              <input
-                id="signup-password"
-                type="password"
-                required
-                minLength={8}
-                placeholder="At least 8 characters"
-                value={signupPassword}
-                onChange={(e) => setSignupPassword(e.target.value)}
-                className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-              />
+              <div className="relative">
+                <input
+                  id="signup-password"
+                  type={showSignupPassword ? 'text' : 'password'}
+                  required
+                  minLength={8}
+                  placeholder="At least 8 characters"
+                  value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)}
+                  className="w-full min-h-[44px] pl-3 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSignupPassword((prev) => !prev)}
+                  aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showSignupPassword}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#1C4A8F] cursor-pointer"
+                >
+                  {showSignupPassword ? (
+                    <EyeOff className="w-5 h-5" aria-hidden="true" />
+                  ) : (
+                    <Eye className="w-5 h-5" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
             </div>
 
             <fieldset className="space-y-2.5 pt-2 border-t border-[var(--border-color)]">
@@ -1398,15 +1418,30 @@ export function PulseApp() {
                   Forgot password?
                 </button>
               </div>
-              <input
-                id="login-password"
-                type="password"
-                required
-                placeholder="Enter your password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-              />
+              <div className="relative">
+                <input
+                  id="login-password"
+                  type={showLoginPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Enter your password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="w-full min-h-[44px] pl-3 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword((prev) => !prev)}
+                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showLoginPassword}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#1C4A8F] cursor-pointer"
+                >
+                  {showLoginPassword ? (
+                    <EyeOff className="w-5 h-5" aria-hidden="true" />
+                  ) : (
+                    <Eye className="w-5 h-5" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {authError && (
@@ -1494,16 +1529,31 @@ export function PulseApp() {
                   >
                     New Password
                   </label>
-                  <input
-                    id="forgot-new-password"
-                    type="password"
-                    required
-                    minLength={8}
-                    placeholder="At least 8 characters"
-                    value={forgotNewPassword}
-                    onChange={(e) => setForgotNewPassword(e.target.value)}
-                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-                  />
+                  <div className="relative">
+                    <input
+                      id="forgot-new-password"
+                      type={showForgotNewPassword ? 'text' : 'password'}
+                      required
+                      minLength={8}
+                      placeholder="At least 8 characters"
+                      value={forgotNewPassword}
+                      onChange={(e) => setForgotNewPassword(e.target.value)}
+                      className="w-full min-h-[44px] pl-3 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotNewPassword((prev) => !prev)}
+                      aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showForgotNewPassword}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#1C4A8F] cursor-pointer"
+                    >
+                      {showForgotNewPassword ? (
+                        <EyeOff className="w-5 h-5" aria-hidden="true" />
+                      ) : (
+                        <Eye className="w-5 h-5" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {authError && (
                   <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
