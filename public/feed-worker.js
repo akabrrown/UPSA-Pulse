@@ -35,6 +35,19 @@ async function fetchFeed() {
     });
 
     if (!response.ok) {
+      if (response.status === 403) {
+        self.postMessage({
+          type: 'FEED_ZONE_BLOCKED',
+          status: 403,
+          timestamp: Date.now(),
+        });
+        isRunning = false;
+        if (timerId) {
+          clearTimeout(timerId);
+          timerId = null;
+        }
+        return;
+      }
       self.postMessage({
         type: 'FEED_SYNC_ERROR',
         status: response.status,

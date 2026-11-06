@@ -380,6 +380,10 @@ export function PulseApp() {
 
     worker.onmessage = (e: MessageEvent) => {
       const data = e.data;
+      if (data?.type === 'FEED_ZONE_BLOCKED') {
+        setOnboardingStage('outside_zone');
+        return;
+      }
       if (data?.type === 'FEED_SYNC_SUCCESS' && Array.isArray(data.posts)) {
         const incoming = data.posts as PublicPostView[];
         if (incoming.length === 0) return;
@@ -716,6 +720,15 @@ export function PulseApp() {
       setOnboardingStage('none');
       setComposeStatusToast(`Location verified: ${json.data.zoneName ?? 'UPSA Campus'} (15-min pass)`);
       void loadFeed();
+      feedWorkerRef.current?.postMessage({
+        type: 'START',
+        payload: {
+          sort,
+          zoneId: selectedZoneId ?? null,
+          channelId: selectedChannelId ?? null,
+          asksOnly,
+        },
+      });
     } else {
       setZoneErrorReason(json.error?.message ?? 'Pulse only works on and around the UPSA campus.');
       setOnboardingStage('outside_zone');

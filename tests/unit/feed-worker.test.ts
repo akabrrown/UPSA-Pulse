@@ -20,10 +20,11 @@ describe('Background Feed Synchronization Worker (FEED-WORKER-1)', () => {
     expect(content).toContain('case \'STOP\':');
   });
 
-  it('emits standard FEED_SYNC_SUCCESS and FEED_SYNC_ERROR event payloads', () => {
+  it('emits standard FEED_SYNC_SUCCESS, FEED_SYNC_ERROR, and FEED_ZONE_BLOCKED event payloads', () => {
     const content = fs.readFileSync(workerPath, 'utf8');
     expect(content).toContain('type: \'FEED_SYNC_SUCCESS\'');
     expect(content).toContain('type: \'FEED_SYNC_ERROR\'');
+    expect(content).toContain('type: \'FEED_ZONE_BLOCKED\'');
     expect(content).toContain('freshCount');
   });
 
