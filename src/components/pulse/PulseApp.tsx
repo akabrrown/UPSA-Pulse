@@ -8,19 +8,25 @@ import {
   ArrowLeft,
   ArrowUp,
   Bell,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Compass,
   Eye,
   EyeOff,
   Flag,
   HeartHandshake,
   Layers,
+  Lock,
   MapPin,
   Moon,
   MoreVertical,
   Plus,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
+  Sparkles,
   Sun,
   Trash2,
   User,
@@ -115,6 +121,29 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+function GoogleLogoSvg({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 9.97 0 12c0 2.03.45 3.84 1.25 5.42l4.03-3.15z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+      />
+    </svg>
+  );
+}
+
 export function PulseApp() {
   // Navigation & Primary Screen State
   const [activeTab, setActiveTab] = useState<ActiveTab>('feed');
@@ -148,6 +177,7 @@ export function PulseApp() {
   const [termsChecked, setTermsChecked] = useState<boolean>(false);
   const [privacyChecked, setPrivacyChecked] = useState<boolean>(false);
   const [guidelinesChecked, setGuidelinesChecked] = useState<boolean>(false);
+  const [showConsentsDetail, setShowConsentsDetail] = useState<boolean>(false);
   const [otpInput, setOtpInput] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState<boolean>(false);
@@ -1124,506 +1154,701 @@ export function PulseApp() {
       privacyChecked &&
       guidelinesChecked;
 
+    const allConsentsAccepted =
+      adultConfirmed && termsChecked && privacyChecked && guidelinesChecked;
+
+    const handleToggleAllConsents = (checked: boolean) => {
+      setAdultConfirmed(checked);
+      setTermsChecked(checked);
+      setPrivacyChecked(checked);
+      setGuidelinesChecked(checked);
+    };
+
+    const getPasswordStrength = (pwd: string) => {
+      if (!pwd) return { score: 0, label: '', barColor: 'bg-transparent', textColor: '' };
+      let score = 0;
+      if (pwd.length >= 8) score += 1;
+      if (pwd.length >= 10 && /[0-9]/.test(pwd)) score += 1;
+      if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score += 1;
+      if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+      if (score <= 1) return { score: 1, label: 'Weak', barColor: 'bg-rose-500', textColor: 'text-rose-600 dark:text-rose-400' };
+      if (score === 2) return { score: 2, label: 'Fair', barColor: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400' };
+      if (score === 3) return { score: 3, label: 'Good', barColor: 'bg-blue-600', textColor: 'text-blue-600 dark:text-blue-400' };
+      return { score: 4, label: 'Strong', barColor: 'bg-emerald-600', textColor: 'text-emerald-600 dark:text-emerald-400' };
+    };
+
+    const pwdStrength = getPasswordStrength(signupPassword);
+
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 font-bold text-[14px] text-[#8A6200]">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#D9A21B]" aria-hidden="true" />
-              <span>UPSA Pulse Student Authentication</span>
-            </div>
-            <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)] mt-1">
-              {authMode === 'signup'
-                ? 'Create your Student Account'
-                : authMode === 'login'
-                ? 'Sign in to UPSA Pulse'
-                : 'Reset your Password'}
-            </h1>
-          </div>
-          <button
-            type="button"
-            onClick={() => setOnboardingStage('none')}
-            className="min-h-[40px] px-3 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] cursor-pointer"
-          >
-            Back to Feed
-          </button>
-        </div>
-
-        {/* Auth Mode Switcher Tabs */}
-        <div className="grid grid-cols-3 gap-1.5 bg-[var(--surface-subtle)] p-1 rounded-[8px] border border-[var(--border-color)]">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('signup');
-              setAuthError(null);
-            }}
-            className={`min-h-[40px] rounded-[6px] text-[14px] font-semibold cursor-pointer ${
-              authMode === 'signup'
-                ? 'bg-[#0B2A5B] text-white'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
-            }`}
-          >
-            Sign Up
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('login');
-              setAuthError(null);
-            }}
-            className={`min-h-[40px] rounded-[6px] text-[14px] font-semibold cursor-pointer ${
-              authMode === 'login'
-                ? 'bg-[#0B2A5B] text-white'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode('forgot');
-              setAuthError(null);
-            }}
-            className={`min-h-[40px] rounded-[6px] text-[14px] font-semibold cursor-pointer ${
-              authMode === 'forgot'
-                ? 'bg-[#0B2A5B] text-white'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
-            }`}
-          >
-            Forgot Password
-          </button>
-        </div>
-
-        {authMode === 'signup' ? (
-          <form
-            onSubmit={handleStudentSignUp}
-            className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4"
-          >
-            <button
-              type="button"
-              disabled={authSubmitting}
-              onClick={() => void handleContinueWithGoogle()}
-              className="w-full min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[15px] flex items-center justify-center gap-2.5 cursor-pointer"
-            >
-              <span className="w-5 h-5 rounded-full bg-[#0B2A5B] text-[#D9A21B] text-[12px] font-bold inline-flex items-center justify-center">
-                G
-              </span>
-              <span>Continue with Google</span>
-            </button>
-
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-[var(--border-color)]" />
-              <span className="flex-shrink mx-3 text-[12px] font-semibold uppercase text-[var(--text-secondary)]">
-                Or sign up with Index Number
-              </span>
-              <div className="flex-grow border-t border-[var(--border-color)]" />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-center px-4 py-8 sm:py-12">
+        <div className="w-full max-w-[540px] mx-auto space-y-5">
+          {/* Top Bar with Campus Branding & Back to Feed */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#0B2A5B] to-[#1C4A8F] flex items-center justify-center text-[#D9A21B] shadow-sm">
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
+              </div>
               <div>
-                <label
-                  htmlFor="signup-username"
-                  className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-                >
-                  Username (Private to you)
-                </label>
-                <input
-                  id="signup-username"
-                  type="text"
-                  required
-                  minLength={3}
-                  maxLength={24}
-                  placeholder="kwame_upsa"
-                  value={signupUsername}
-                  onChange={(e) => setSignupUsername(e.target.value)}
-                  className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-                />
-                <p className="text-[12px] text-[var(--text-secondary)] mt-1">
-                  Never shown on posts; threads only show OP or Student n.
+                <span className="text-[12px] font-bold tracking-wider uppercase text-[#8A6200] dark:text-[#E5B53A] flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#1F7A4D] animate-pulse" aria-hidden="true" />
+                  UPSA Pulse Student Portal
+                </span>
+                <p className="text-[11px] text-[var(--text-secondary)] font-medium">
+                  Verified Campus Network
                 </p>
               </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOnboardingStage('none')}
+              className="inline-flex items-center gap-1.5 min-h-[38px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-card)] text-[13px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Back to Feed</span>
+            </button>
+          </div>
 
-              <div>
-                <label
-                  htmlFor="signup-index-number"
-                  className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-                >
-                  UPSA Student Index Number
-                </label>
-                <div className="flex gap-1.5">
-                  <input
-                    id="signup-index-number"
-                    type="text"
-                    required
-                    placeholder="10284912"
-                    value={signupIndexNumber}
-                    onChange={(e) => {
-                      setSignupIndexNumber(e.target.value);
-                      setIndexVerifiedBadge(null);
-                    }}
-                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] font-mono"
-                  />
+          {/* Heading */}
+          <div className="space-y-1">
+            <h1 className="text-[24px] sm:text-[26px] font-extrabold text-[var(--text-heading)] tracking-tight">
+              {authMode === 'signup'
+                ? 'Join the Campus Pulse'
+                : authMode === 'login'
+                ? 'Welcome Back to UPSA'
+                : 'Account Recovery'}
+            </h1>
+            <p className="text-[14px] text-[var(--text-secondary)] leading-relaxed">
+              {authMode === 'signup'
+                ? 'Verified exclusively for UPSA students. 100% pseudonymous on campus.'
+                : authMode === 'login'
+                ? 'Sign in to catch what is happening live across hostels, faculties, and campus spaces.'
+                : 'Enter your UPSA Student Index or Username to receive a secure recovery code.'}
+            </p>
+          </div>
+
+          {/* Modern 2-Pill Flow Switcher (Forgot Password is an inline link inside Sign In) */}
+          {authMode !== 'forgot' ? (
+            <div className="grid grid-cols-2 p-1 rounded-[12px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signup');
+                  setAuthError(null);
+                }}
+                className={`min-h-[42px] rounded-[9px] text-[14px] font-semibold transition-all cursor-pointer ${
+                  authMode === 'signup'
+                    ? 'bg-[#0B2A5B] text-white shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
+                }`}
+              >
+                Create Account
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError(null);
+                }}
+                className={`min-h-[42px] rounded-[9px] text-[14px] font-semibold transition-all cursor-pointer ${
+                  authMode === 'login'
+                    ? 'bg-[#0B2A5B] text-white shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
+                }`}
+              >
+                Sign In
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError(null);
+                }}
+                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Return to Sign In</span>
+              </button>
+              <span className="text-[12px] text-[var(--text-secondary)]">
+                Step {forgotStep === 'request' ? '1 of 2' : '2 of 2'}
+              </span>
+            </div>
+          )}
+
+          {/* Main Form Container */}
+          {authMode === 'signup' ? (
+            <form
+              onSubmit={handleStudentSignUp}
+              className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4"
+            >
+              {/* Google Fast SSO */}
+              <button
+                type="button"
+                disabled={authSubmitting}
+                onClick={() => void handleContinueWithGoogle()}
+                className="w-full min-h-[46px] px-4 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-colors cursor-pointer group"
+              >
+                <GoogleLogoSvg className="w-5 h-5 shrink-0" />
+                <span>Continue with UPSA Student Google</span>
+                <span className="hidden sm:inline-block text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--surface-subtle)] px-2 py-0.5 rounded-full border border-[var(--border-color)]">
+                  @st.upsa.edu.gh
+                </span>
+              </button>
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-[var(--border-color)]" />
+                <span className="flex-shrink mx-3 text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                  or sign up with index number
+                </span>
+                <div className="flex-grow border-t border-[var(--border-color)]" />
+              </div>
+
+              {/* Field 1: UPSA Student Index Number */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="signup-index-number"
+                    className="block text-[13px] font-semibold text-[var(--text-heading)]"
+                  >
+                    UPSA Student Index Number
+                  </label>
+                  <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                    Required for enrollment check
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      id="signup-index-number"
+                      type="text"
+                      required
+                      placeholder="e.g. 10284912"
+                      value={signupIndexNumber}
+                      onChange={(e) => {
+                        setSignupIndexNumber(e.target.value);
+                        setIndexVerifiedBadge(null);
+                      }}
+                      className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => void handleVerifyStudentIndex()}
-                    className="min-h-[44px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] cursor-pointer"
+                    className="min-h-[46px] px-4 rounded-[10px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] transition-colors cursor-pointer"
                   >
                     Verify
                   </button>
                 </div>
                 {indexVerifiedBadge ? (
-                  <p className="text-[12px] font-semibold text-[#1F7A4D] mt-1">
-                    ✓ {indexVerifiedBadge}
-                  </p>
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#1F7A4D] bg-[#E8F5E9] dark:bg-[#133824]/40 px-2.5 py-1.5 rounded-[8px]">
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-[#1F7A4D]" />
+                    <span>✓ {indexVerifiedBadge}</span>
+                  </div>
                 ) : (
-                  <p className="text-[12px] text-[var(--text-secondary)] mt-1">
-                    Validated via UPSA Student Index API key (e.g. <code>10284912</code>).
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Validated against the official UPSA student registry. Index numbers are salt-hashed and never visible on campus feeds.
                   </p>
                 )}
               </div>
-            </div>
 
-            <div>
-              <label
-                htmlFor="signup-password"
-                className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="signup-password"
-                  type={showSignupPassword ? 'text' : 'password'}
-                  required
-                  minLength={8}
-                  placeholder="At least 8 characters"
-                  value={signupPassword}
-                  onChange={(e) => setSignupPassword(e.target.value)}
-                  className="w-full min-h-[44px] pl-3 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSignupPassword((prev) => !prev)}
-                  aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showSignupPassword}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#1C4A8F] cursor-pointer"
-                >
-                  {showSignupPassword ? (
-                    <EyeOff className="w-5 h-5" aria-hidden="true" />
-                  ) : (
-                    <Eye className="w-5 h-5" aria-hidden="true" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <fieldset className="space-y-2.5 pt-2 border-t border-[var(--border-color)]">
-              <legend className="text-[14px] font-semibold text-[var(--text-heading)] pb-1">
-                Age &amp; Mandatory Consents (Unticked by default)
-              </legend>
-
-              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={adultConfirmed}
-                  onChange={(e) => setAdultConfirmed(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-                />
-                <span className="text-[14px]">I confirm that I am 18 years of age or older.</span>
-              </label>
-
-              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={termsChecked}
-                  onChange={(e) => setTermsChecked(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-                />
-                <span className="text-[14px]">
-                  I have read and accept the{' '}
-                  <Link href="/terms" className="text-[#1C4A8F] underline font-semibold">
-                    Terms of Service (v1.0)
-                  </Link>
-                  .
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={privacyChecked}
-                  onChange={(e) => setPrivacyChecked(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-                />
-                <span className="text-[14px]">
-                  I have read and accept the{' '}
-                  <Link href="/privacy" className="text-[#1C4A8F] underline font-semibold">
-                    Privacy Notice (v1.0)
-                  </Link>
-                  .
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 min-h-[40px] cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={guidelinesChecked}
-                  onChange={(e) => setGuidelinesChecked(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-[#0B2A5B]"
-                />
-                <span className="text-[14px]">
-                  I agree to follow the{' '}
-                  <Link
-                    href="/community-guidelines"
-                    className="text-[#1C4A8F] underline font-semibold"
+              {/* Field 2: Secret Username (Private) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="signup-username"
+                    className="block text-[13px] font-semibold text-[var(--text-heading)]"
                   >
-                    Community Guidelines (v1.0)
-                  </Link>
-                  .
-                </span>
-              </label>
-            </fieldset>
+                    Secret Username
+                  </label>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/60">
+                    <Lock className="w-3 h-3" />
+                    Private to your device
+                  </span>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] font-mono text-[14px]">
+                    @
+                  </span>
+                  <input
+                    id="signup-username"
+                    type="text"
+                    required
+                    minLength={3}
+                    maxLength={24}
+                    placeholder="kwame_upsa"
+                    value={signupUsername}
+                    onChange={(e) => setSignupUsername(e.target.value)}
+                    className="w-full min-h-[46px] pl-8 pr-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                  />
+                </div>
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  Used only to log into your account. Threads and comments will only display pseudonyms like OP or Student 4.
+                </p>
+              </div>
 
-            {authError && (
-              <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
-                {authError}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={!allConsented || authSubmitting}
-              className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
-            >
-              {authSubmitting ? 'Verifying Student Index...' : 'Sign Up with Index Number'}
-            </button>
-          </form>
-        ) : authMode === 'login' ? (
-          <form
-            onSubmit={handleStudentLogin}
-            className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4"
-          >
-            <button
-              type="button"
-              disabled={authSubmitting}
-              onClick={() => void handleContinueWithGoogle()}
-              className="w-full min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[15px] flex items-center justify-center gap-2.5 cursor-pointer"
-            >
-              <span className="w-5 h-5 rounded-full bg-[#0B2A5B] text-[#D9A21B] text-[12px] font-bold inline-flex items-center justify-center">
-                G
-              </span>
-              <span>Continue with Google</span>
-            </button>
-
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-[var(--border-color)]" />
-              <span className="flex-shrink mx-3 text-[12px] font-semibold uppercase text-[var(--text-secondary)]">
-                Or sign in with Username / Index Number
-              </span>
-              <div className="flex-grow border-t border-[var(--border-color)]" />
-            </div>
-
-            <div>
-              <label
-                htmlFor="login-identifier"
-                className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-              >
-                UPSA Index Number or Username
-              </label>
-              <input
-                id="login-identifier"
-                type="text"
-                required
-                placeholder="10284912 or kwame_upsa"
-                value={loginIdentifier}
-                onChange={(e) => setLoginIdentifier(e.target.value)}
-                className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
+              {/* Field 3: Password with Eye Toggle & Strength Meter */}
+              <div className="space-y-1.5">
                 <label
-                  htmlFor="login-password"
-                  className="block text-[14px] font-semibold text-[var(--text-heading)]"
+                  htmlFor="signup-password"
+                  className="block text-[13px] font-semibold text-[var(--text-heading)]"
                 >
                   Password
                 </label>
+                <div className="relative">
+                  <input
+                    id="signup-password"
+                    type={showSignupPassword ? 'text' : 'password'}
+                    required
+                    minLength={8}
+                    placeholder="At least 8 characters"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignupPassword((prev) => !prev)}
+                    aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showSignupPassword}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
+                  >
+                    {showSignupPassword ? (
+                      <EyeOff className="w-4 h-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="w-4 h-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Password Strength Meter */}
+                {signupPassword.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    <div className="grid grid-cols-4 gap-1.5 h-1.5">
+                      <div className={`h-full rounded-full transition-all ${pwdStrength.score >= 1 ? pwdStrength.barColor : 'bg-[var(--surface-subtle)]'}`} />
+                      <div className={`h-full rounded-full transition-all ${pwdStrength.score >= 2 ? pwdStrength.barColor : 'bg-[var(--surface-subtle)]'}`} />
+                      <div className={`h-full rounded-full transition-all ${pwdStrength.score >= 3 ? pwdStrength.barColor : 'bg-[var(--surface-subtle)]'}`} />
+                      <div className={`h-full rounded-full transition-all ${pwdStrength.score >= 4 ? pwdStrength.barColor : 'bg-[var(--surface-subtle)]'}`} />
+                    </div>
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="text-[var(--text-secondary)]">Password strength</span>
+                      <span className={`font-semibold ${pwdStrength.textColor}`}>{pwdStrength.label}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Elevated Campus Agreement Card (1-Click Master Toggle + Expandable Details) */}
+              <div className="rounded-[12px] border border-[var(--border-color)] bg-[var(--surface-subtle)] p-3.5 space-y-3">
+                {/* Master Fast Agreement Toggle */}
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={allConsentsAccepted}
+                    onChange={(e) => handleToggleAllConsents(e.target.checked)}
+                    className="mt-0.5 w-5 h-5 rounded-[4px] accent-[#0B2A5B] cursor-pointer shrink-0"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-[13px] font-semibold text-[var(--text-heading)] block leading-snug">
+                      I confirm I am 18+ and accept UPSA Pulse Campus Standards
+                    </span>
+                    <span className="text-[11px] text-[var(--text-secondary)] block">
+                      Encompasses Terms of Service, Privacy Notice, and Community Guidelines.
+                    </span>
+                  </div>
+                </label>
+
+                {/* Expandable Review Details */}
+                <div className="pt-2 border-t border-[var(--border-color)]">
+                  <button
+                    type="button"
+                    onClick={() => setShowConsentsDetail((prev) => !prev)}
+                    className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#1C4A8F] hover:underline cursor-pointer"
+                  >
+                    <span>{showConsentsDetail ? 'Hide detailed legal checklist' : 'Review individual agreements & age status'}</span>
+                    {showConsentsDetail ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+
+                  {showConsentsDetail && (
+                    <div className="mt-3 space-y-2.5 pl-1 animate-in fade-in duration-200">
+                      <label className="flex items-center gap-2.5 cursor-pointer text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={adultConfirmed}
+                          onChange={(e) => setAdultConfirmed(e.target.checked)}
+                          className="w-4 h-4 rounded-[4px] accent-[#0B2A5B]"
+                        />
+                        <span>I confirm that I am 18 years of age or older.</span>
+                      </label>
+
+                      <label className="flex items-center gap-2.5 cursor-pointer text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={termsChecked}
+                          onChange={(e) => setTermsChecked(e.target.checked)}
+                          className="w-4 h-4 rounded-[4px] accent-[#0B2A5B]"
+                        />
+                        <span>
+                          I accept the{' '}
+                          <Link href="/terms" className="text-[#1C4A8F] font-semibold underline">
+                            Terms of Service (v1.0)
+                          </Link>
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2.5 cursor-pointer text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={privacyChecked}
+                          onChange={(e) => setPrivacyChecked(e.target.checked)}
+                          className="w-4 h-4 rounded-[4px] accent-[#0B2A5B]"
+                        />
+                        <span>
+                          I accept the{' '}
+                          <Link href="/privacy" className="text-[#1C4A8F] font-semibold underline">
+                            Privacy Notice (v1.0)
+                          </Link>
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2.5 cursor-pointer text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={guidelinesChecked}
+                          onChange={(e) => setGuidelinesChecked(e.target.checked)}
+                          className="w-4 h-4 rounded-[4px] accent-[#0B2A5B]"
+                        />
+                        <span>
+                          I agree to follow the{' '}
+                          <Link
+                            href="/community-guidelines"
+                            className="text-[#1C4A8F] font-semibold underline"
+                          >
+                            Community Guidelines (v1.0)
+                          </Link>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Privacy & DPA Act 843 Assurance Seal */}
+                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)] pt-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#1F7A4D] shrink-0" />
+                  <span>Protected under Ghana Data Protection Act (Act 843). Zero telemetry or phone tracking.</span>
+                </div>
+              </div>
+
+              {authError && (
+                <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                  {authError}
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={!allConsented || authSubmitting}
+                className="w-full min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {authSubmitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Verifying Student Account...</span>
+                  </>
+                ) : (
+                  <span>Create Student Account</span>
+                )}
+              </button>
+
+              <p className="text-center text-[12px] text-[var(--text-secondary)] pt-1">
+                Already registered?{' '}
                 <button
                   type="button"
                   onClick={() => {
-                    setAuthMode('forgot');
-                    setForgotIdentifier(loginIdentifier);
+                    setAuthMode('login');
                     setAuthError(null);
                   }}
-                  className="text-[13px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+                  className="font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
                 >
-                  Forgot password?
+                  Sign in to your account
                 </button>
+              </p>
+            </form>
+          ) : authMode === 'login' ? (
+            <form
+              onSubmit={handleStudentLogin}
+              className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4"
+            >
+              {/* Google SSO Button */}
+              <button
+                type="button"
+                disabled={authSubmitting}
+                onClick={() => void handleContinueWithGoogle()}
+                className="w-full min-h-[46px] px-4 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-colors cursor-pointer group"
+              >
+                <GoogleLogoSvg className="w-5 h-5 shrink-0" />
+                <span>Continue with UPSA Student Google</span>
+              </button>
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-[var(--border-color)]" />
+                <span className="flex-shrink mx-3 text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+                  or sign in with credentials
+                </span>
+                <div className="flex-grow border-t border-[var(--border-color)]" />
               </div>
-              <div className="relative">
+
+              {/* Login Identifier */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="login-identifier"
+                  className="block text-[13px] font-semibold text-[var(--text-heading)]"
+                >
+                  UPSA Index Number or Secret Username
+                </label>
                 <input
-                  id="login-password"
-                  type={showLoginPassword ? 'text' : 'password'}
+                  id="login-identifier"
+                  type="text"
                   required
-                  placeholder="Enter your password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full min-h-[44px] pl-3 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
+                  placeholder="e.g. 10284912 or kwame_upsa"
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
+                  className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                 />
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="login-password"
+                    className="block text-[13px] font-semibold text-[var(--text-heading)]"
+                  >
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('forgot');
+                      setForgotIdentifier(loginIdentifier);
+                      setAuthError(null);
+                    }}
+                    className="text-[12px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    id="login-password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    placeholder="Enter your password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((prev) => !prev)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showLoginPassword}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
+                  >
+                    {showLoginPassword ? (
+                      <EyeOff className="w-4 h-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="w-4 h-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {authError && (
+                <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                  {authError}
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                className="w-full min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {authSubmitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Signing In...</span>
+                  </>
+                ) : (
+                  <span>Sign In to Campus Feed</span>
+                )}
+              </button>
+
+              <p className="text-center text-[12px] text-[var(--text-secondary)] pt-1">
+                New student at UPSA?{' '}
                 <button
                   type="button"
-                  onClick={() => setShowLoginPassword((prev) => !prev)}
-                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showLoginPassword}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#1C4A8F] cursor-pointer"
+                  onClick={() => {
+                    setAuthMode('signup');
+                    setAuthError(null);
+                  }}
+                  className="font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
                 >
-                  {showLoginPassword ? (
-                    <EyeOff className="w-5 h-5" aria-hidden="true" />
-                  ) : (
-                    <Eye className="w-5 h-5" aria-hidden="true" />
-                  )}
+                  Create an account in 30 seconds
                 </button>
-              </div>
-            </div>
-
-            {authError && (
-              <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
-                {authError}
               </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={authSubmitting}
-              className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
-            >
-              {authSubmitting ? 'Signing in...' : 'Sign In'}
-            </button>
-          </form>
-        ) : (
-          <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4">
-            {forgotStep === 'request' ? (
-              <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
-                <p className="text-[14px] text-[var(--text-secondary)]">
-                  Enter your UPSA Student Index Number or Username to request a 6-digit password
-                  recovery code.
-                </p>
-                <div>
-                  <label
-                    htmlFor="forgot-identifier"
-                    className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-                  >
-                    UPSA Index Number or Username
-                  </label>
-                  <input
-                    id="forgot-identifier"
-                    type="text"
-                    required
-                    placeholder="10284912 or kwame_upsa"
-                    value={forgotIdentifier}
-                    onChange={(e) => setForgotIdentifier(e.target.value)}
-                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-                  />
-                </div>
-                {authError && (
-                  <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
-                    {authError}
-                  </p>
-                )}
-                <button
-                  type="submit"
-                  disabled={authSubmitting}
-                  className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
-                >
-                  Send 6-Digit Recovery Code
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleForgotPasswordReset} className="space-y-4">
-                {forgotStatusMsg && (
-                  <div className="p-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold">
-                    {forgotStatusMsg}
-                  </div>
-                )}
-                <div>
-                  <label
-                    htmlFor="forgot-code"
-                    className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-                  >
-                    6-Digit Recovery Code
-                  </label>
-                  <input
-                    id="forgot-code"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    required
-                    placeholder="123456"
-                    value={forgotResetCode}
-                    onChange={(e) => setForgotResetCode(e.target.value)}
-                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[16px] tracking-widest font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="forgot-new-password"
-                    className="block text-[14px] font-semibold text-[var(--text-heading)] mb-1"
-                  >
-                    New Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="forgot-new-password"
-                      type={showForgotNewPassword ? 'text' : 'password'}
-                      required
-                      minLength={8}
-                      placeholder="At least 8 characters"
-                      value={forgotNewPassword}
-                      onChange={(e) => setForgotNewPassword(e.target.value)}
-                      className="w-full min-h-[44px] pl-3 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowForgotNewPassword((prev) => !prev)}
-                      aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
-                      aria-pressed={showForgotNewPassword}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#1C4A8F] cursor-pointer"
+            </form>
+          ) : (
+            /* Forgot Password Flow */
+            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4">
+              {forgotStep === 'request' ? (
+                <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="forgot-identifier"
+                      className="block text-[13px] font-semibold text-[var(--text-heading)]"
                     >
-                      {showForgotNewPassword ? (
-                        <EyeOff className="w-5 h-5" aria-hidden="true" />
-                      ) : (
-                        <Eye className="w-5 h-5" aria-hidden="true" />
-                      )}
-                    </button>
+                      UPSA Index Number or Secret Username
+                    </label>
+                    <input
+                      id="forgot-identifier"
+                      type="text"
+                      required
+                      placeholder="e.g. 10284912 or kwame_upsa"
+                      value={forgotIdentifier}
+                      onChange={(e) => setForgotIdentifier(e.target.value)}
+                      className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                    />
+                    <p className="text-[11px] text-[var(--text-secondary)]">
+                      A 6-digit recovery code will be dispatched to your student inbox or registered device.
+                    </p>
                   </div>
-                </div>
-                {authError && (
-                  <p role="alert" className="text-[14px] font-semibold text-[#A32121]">
-                    {authError}
-                  </p>
-                )}
-                <div className="flex gap-2">
+
+                  {authError && (
+                    <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                      {authError}
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={authSubmitting}
-                    className="flex-1 min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
+                    className="w-full min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    Set New Password
+                    {authSubmitting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Sending Recovery Code...</span>
+                      </>
+                    ) : (
+                      <span>Send 6-Digit Recovery Code</span>
+                    )}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setForgotStep('request')}
-                    className="min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] text-[14px] font-semibold cursor-pointer"
-                  >
-                    Resend
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        )}
+                </form>
+              ) : (
+                <form onSubmit={handleForgotPasswordReset} className="space-y-4">
+                  {forgotStatusMsg && (
+                    <div className="p-3.5 rounded-[10px] bg-[#DCE6F5] dark:bg-[#1C4A8F]/30 text-[#0B2A5B] dark:text-[#DCE6F5] text-[13px] font-semibold">
+                      {forgotStatusMsg}
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="forgot-code"
+                      className="block text-[13px] font-semibold text-[var(--text-heading)]"
+                    >
+                      6-Digit Recovery Code
+                    </label>
+                    <input
+                      id="forgot-code"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      required
+                      placeholder="••••••"
+                      value={forgotResetCode}
+                      onChange={(e) => setForgotResetCode(e.target.value)}
+                      className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[20px] tracking-[0.3em] font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="forgot-new-password"
+                      className="block text-[13px] font-semibold text-[var(--text-heading)]"
+                    >
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="forgot-new-password"
+                        type={showForgotNewPassword ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        placeholder="At least 8 characters"
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotNewPassword((prev) => !prev)}
+                        aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                        aria-pressed={showForgotNewPassword}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
+                      >
+                        {showForgotNewPassword ? (
+                          <EyeOff className="w-4 h-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="w-4 h-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {authError && (
+                    <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                      {authError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2.5 pt-1">
+                    <button
+                      type="submit"
+                      disabled={authSubmitting}
+                      className="flex-1 min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {authSubmitting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Updating Password...</span>
+                        </>
+                      ) : (
+                        <span>Set New Password & Sign In</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForgotStep('request')}
+                      className="min-h-[48px] px-4 rounded-[10px] border border-[var(--border-color)] text-[13px] font-semibold hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer"
+                    >
+                      Resend Code
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
