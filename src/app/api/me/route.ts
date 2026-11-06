@@ -13,6 +13,10 @@ export async function GET(req: NextRequest) {
     const data = await dbGetMeAndNotifications(userId);
     return apiSuccess(data);
   } catch (err) {
+    if (err instanceof Error && err.message === 'forbidden') {
+      const res = apiSuccess({ profile: null, notifications: [] });
+      return clearSessionCookie(res);
+    }
     return mapDomainErrorToResponse(err);
   }
 }

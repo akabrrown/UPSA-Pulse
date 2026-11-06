@@ -6,7 +6,7 @@ const cspHeader = [
   "style-src 'self' 'unsafe-inline' https://vercel.live",
   "img-src 'self' data: blob: https://vercel.live https://vercel.com",
   "font-src 'self' data: https://fonts.gstatic.com https://vercel.live https://assets.vercel.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* http://localhost:* https://vercel.live wss://ws-*.pusher.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* http://localhost:* https://vercel.live wss://*.pusher.com https://*.pusher.com",
   "frame-src 'self' https://vercel.live",
   "frame-ancestors 'self' https://vercel.live",
   "base-uri 'self'",
