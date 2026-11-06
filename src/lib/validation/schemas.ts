@@ -29,11 +29,11 @@ export type ReportReason = z.infer<typeof reportReasonSchema>;
 export const feedSortSchema = z.enum(['hot', 'new', 'top24']);
 export type FeedSort = z.infer<typeof feedSortSchema>;
 
-// AUTH-1 & AUTH-2: Email OTP sign-in with 18+ confirmation and 3 separate unticked consents
+// AUTH-1 & AUTH-2: Student sign-in with UPSA student confirmation and 3 separate legal consents
 export const signUpConsentSchema = z.object({
   email: z.string().trim().email('Enter a valid email address'),
   adultConfirmed: z.literal(true, {
-    errorMap: () => ({ message: 'You must confirm you are 18 or over.' }),
+    errorMap: () => ({ message: 'You must confirm that you are a current UPSA student.' }),
   }),
   termsAccepted: z.literal(true, {
     errorMap: () => ({ message: 'You must accept the Terms of Service.' }),
@@ -70,7 +70,7 @@ export const studentSignUpSchema = z.object({
     .max(128, 'Password cannot exceed 128 characters'),
   email: z.string().trim().email().optional(),
   adultConfirmed: z.literal(true, {
-    errorMap: () => ({ message: 'You must confirm you are 18 or over.' }),
+    errorMap: () => ({ message: 'You must confirm that you are a current UPSA student.' }),
   }),
   termsAccepted: z.literal(true, {
     errorMap: () => ({ message: 'You must accept the Terms of Service.' }),

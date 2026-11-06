@@ -11,6 +11,7 @@ import {
 import { isAllowedEmailDomain, verifyStudentIndexWithApiKey } from '@/lib/domain/pulse-engine';
 import { registerSignUpAndDeviceInStore } from '@/lib/store/pulse-store';
 import {
+  dbCheckUsernameTaken,
   dbConfirmPasswordReset,
   dbGoogleAuthStudent,
   dbLoginStudent,
@@ -40,6 +41,15 @@ export async function POST(req: NextRequest) {
         );
       }
       return apiSuccess(check);
+    }
+
+    if (body.step === 'check_username') {
+      const rawUser = typeof body.username === 'string' ? body.username.trim() : '';
+      if (rawUser.length < 3) {
+        return apiError('invalid_username', 'Username must be at least 3 characters.', 400);
+      }
+      const isTaken = await dbCheckUsernameTaken(rawUser);
+      return apiSuccess({ available: !isTaken, username: rawUser });
     }
 
     if (body.step === 'signup') {

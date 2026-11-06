@@ -35,6 +35,7 @@ import {
   submitAppealInStore,
   decideAppealInStore,
   approvePendingDeviceInStore,
+  isUsernameTakenInStore,
   signUpStudentInStore,
   loginStudentInStore,
   googleAuthStudentInStore,
@@ -141,8 +142,12 @@ async function withAuthenticatedUser<T>(
     const result = await fn(client);
     await client.query('COMMIT');
     return result;
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK');
+    const pgErr = err as { code?: string; constraint?: string };
+    if (pgErr?.code === '23505' && pgErr?.constraint?.includes('username')) {
+      throw new Error('username_already_taken');
+    }
     throw err;
   } finally {
     client.release();
@@ -652,8 +657,12 @@ export async function dbDeleteAccount(
     );
     await client.query('COMMIT');
     return { deletedAt: new Date().toISOString() };
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK');
+    const pgErr = err as { code?: string; constraint?: string };
+    if (pgErr?.code === '23505' && pgErr?.constraint?.includes('username')) {
+      throw new Error('username_already_taken');
+    }
     throw err;
   } finally {
     client.release();
@@ -1200,7 +1209,8 @@ export async function dbSignUpStudent(input: {
     await client.query('BEGIN');
 
     const dupRes = await client.query(
-      `SELECT id FROM private.profiles
+      `SELECT id, lower(username) AS existing_username, upper(index_number) AS existing_index
+       FROM private.profiles
        WHERE lower(username) = lower($1::text)
           OR upper(index_number) = upper($2::text)
           OR lower(email) = lower($3::text)
@@ -1208,6 +1218,10 @@ export async function dbSignUpStudent(input: {
       [cleanUsername, cleanIndex, cleanEmail]
     );
     if (dupRes.rows.length > 0) {
+      const match = dupRes.rows[0];
+      if (match.existing_username === cleanUsername) {
+        throw new Error('username_already_taken');
+      }
       throw new Error('student_already_registered');
     }
 
@@ -1256,9 +1270,30 @@ export async function dbSignUpStudent(input: {
       indexVerified: true,
       deviceStatus,
     };
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK');
+    const pgErr = err as { code?: string; constraint?: string };
+    if (pgErr?.code === '23505' && pgErr?.constraint?.includes('username')) {
+      throw new Error('username_already_taken');
+    }
     throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbCheckUsernameTaken(rawUsername: string): Promise<boolean> {
+  const clean = rawUsername.trim().toLowerCase();
+  if (!shouldUseLiveDb()) {
+    return isUsernameTakenInStore(clean);
+  }
+  const client = await getPgPool().connect();
+  try {
+    const res = await client.query(
+      `SELECT 1 FROM private.profiles WHERE lower(username) = lower($1::text) LIMIT 1`,
+      [clean]
+    );
+    return res.rows.length > 0;
   } finally {
     client.release();
   }
@@ -1442,8 +1477,12 @@ export async function dbGoogleAuthStudent(input: {
       indexVerified: Boolean(indexNumber),
       deviceStatus,
     };
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK');
+    const pgErr = err as { code?: string; constraint?: string };
+    if (pgErr?.code === '23505' && pgErr?.constraint?.includes('username')) {
+      throw new Error('username_already_taken');
+    }
     throw err;
   } finally {
     client.release();
@@ -1565,8 +1604,12 @@ export async function dbConfirmPasswordReset(input: {
       username: row.username ? String(row.username) : null,
       indexNumber: row.index_number ? String(row.index_number) : null,
     };
-  } catch (err) {
+  } catch (err: unknown) {
     await client.query('ROLLBACK');
+    const pgErr = err as { code?: string; constraint?: string };
+    if (pgErr?.code === '23505' && pgErr?.constraint?.includes('username')) {
+      throw new Error('username_already_taken');
+    }
     throw err;
   } finally {
     client.release();

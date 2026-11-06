@@ -134,6 +134,12 @@ export function mapDomainErrorToResponse(err: unknown) {
         'An appeal has already been submitted for this moderation action.',
         409
       );
+    case 'username_already_taken':
+      return apiError(
+        'username_already_taken',
+        'This username is already taken. Please choose another username.',
+        409
+      );
     case 'student_already_registered':
       return apiError(
         'student_already_registered',

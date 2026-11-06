@@ -1976,6 +1976,13 @@ function registerOrCheckDeviceForUser(
   return 'pending';
 }
 
+export function isUsernameTakenInStore(rawUsername: string): boolean {
+  const clean = rawUsername.trim().toLowerCase();
+  return Array.from(state.profiles.values()).some(
+    (p) => p.username && p.username.toLowerCase() === clean
+  );
+}
+
 export function signUpStudentInStore(input: {
   username: string;
   indexNumber: string;
@@ -1998,9 +2005,15 @@ export function signUpStudentInStore(input: {
     input.email?.trim() || `${cleanIndex.replace(/[^A-Z0-9]/gi, '').toLowerCase()}@st.upsa.edu.gh`
   ).toLowerCase();
 
+  const existingUser = Array.from(state.profiles.values()).find(
+    (p) => p.username && p.username.toLowerCase() === cleanUsername
+  );
+  if (existingUser) {
+    throw new Error('username_already_taken');
+  }
+
   const existingDuplicate = Array.from(state.profiles.values()).find(
     (p) =>
-      (p.username && p.username.toLowerCase() === cleanUsername) ||
       (p.indexNumber && normalizeUpsaIndexNumber(p.indexNumber) === cleanIndex) ||
       p.email.toLowerCase() === cleanEmail
   );

@@ -12,6 +12,7 @@ import {
   applyModerationActionInStore,
   deleteAccountInStore,
   executeUnmaskActionInStore,
+  signUpStudentInStore,
 } from '@/lib/store/pulse-store';
 
 describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 & 9)', () => {
@@ -243,6 +244,36 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
     );
     expect(approved.status).toBe('approved');
     expect(approved.disclosedIdentity?.email).toBe('efua@st.upsa.edu.gh');
+  });
+
+  it('prevents two students from registering with the same username (case-insensitive)', () => {
+    signUpStudentInStore({
+      username: 'kwame_pulse',
+      indexNumber: '10284991',
+      password: 'Password123!',
+      rawDeviceToken: 'token-abc',
+      pepper: 'test-pepper',
+    });
+
+    expect(() =>
+      signUpStudentInStore({
+        username: 'kwame_pulse',
+        indexNumber: '10284992',
+        password: 'Password123!',
+        rawDeviceToken: 'token-xyz',
+        pepper: 'test-pepper',
+      })
+    ).toThrow('username_already_taken');
+
+    expect(() =>
+      signUpStudentInStore({
+        username: 'Kwame_Pulse',
+        indexNumber: '10284993',
+        password: 'Password123!',
+        rawDeviceToken: 'token-def',
+        pepper: 'test-pepper',
+      })
+    ).toThrow('username_already_taken');
   });
 });
 

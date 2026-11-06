@@ -26,7 +26,6 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Sun,
   Trash2,
   User,
@@ -121,29 +120,6 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
-function GoogleLogoSvg({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="#4285F4"
-        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.16 0 9.97 0 12c0 2.03.45 3.84 1.25 5.42l4.03-3.15z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-      />
-    </svg>
-  );
-}
-
 export function PulseApp() {
   // Navigation & Primary Screen State
   const [activeTab, setActiveTab] = useState<ActiveTab>('feed');
@@ -159,6 +135,7 @@ export function PulseApp() {
   const [welcomeSlide, setWelcomeSlide] = useState<number>(0);
   const [authMode, setAuthMode] = useState<'signup' | 'login' | 'forgot'>('signup');
   const [signupUsername, setSignupUsername] = useState<string>('');
+  const [usernameTakenError, setUsernameTakenError] = useState<string | null>(null);
   const [signupIndexNumber, setSignupIndexNumber] = useState<string>('');
   const [signupPassword, setSignupPassword] = useState<string>('');
   const [showSignupPassword, setShowSignupPassword] = useState<boolean>(false);
@@ -705,9 +682,38 @@ export function PulseApp() {
     }
   };
 
+  const handleCheckUsernameAvailability = async () => {
+    const raw = signupUsername.trim();
+    if (raw.length < 3) {
+      setUsernameTakenError(null);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'check_username',
+          username: raw,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (!json.data.available) {
+          setUsernameTakenError('This username is already taken. Please choose another username.');
+        } else {
+          setUsernameTakenError(null);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const handleStudentSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+    setUsernameTakenError(null);
     setAuthSubmitting(true);
     try {
       const res = await fetch('/api/auth/otp', {
@@ -739,6 +745,9 @@ export function PulseApp() {
         setOnboardingStage('location_explainer');
         void loadMeAndAlerts();
       } else {
+        if (json.error?.code === 'username_already_taken') {
+          setUsernameTakenError('This username is already taken. Please choose another username.');
+        }
         setAuthError(json.error?.message ?? 'Check your username, UPSA index number, password, and consents.');
       }
     } finally {
@@ -1181,81 +1190,69 @@ export function PulseApp() {
 
     return (
       <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-center px-4 py-8 sm:py-12">
-        <div className="w-full max-w-[540px] mx-auto space-y-5">
-          {/* Top Bar with Campus Branding & Back to Feed */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-[#0B2A5B] to-[#1C4A8F] flex items-center justify-center text-[#D9A21B] shadow-sm">
-                <Sparkles className="w-4 h-4" aria-hidden="true" />
-              </div>
-              <div>
-                <span className="text-[12px] font-bold tracking-wider uppercase text-[#8A6200] dark:text-[#E5B53A] flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#1F7A4D] animate-pulse" aria-hidden="true" />
-                  UPSA Pulse Student Portal
-                </span>
-                <p className="text-[11px] text-[var(--text-secondary)] font-medium">
-                  Verified Campus Network
-                </p>
-              </div>
-            </div>
+        <div className="w-full max-w-[520px] mx-auto space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
+            <span className="text-[15px] font-bold text-[#0B2A5B] dark:text-[#D9A21B]">
+              UPSA Pulse
+            </span>
             <button
               type="button"
               onClick={() => setOnboardingStage('none')}
-              className="inline-flex items-center gap-1.5 min-h-[38px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-card)] text-[13px] font-semibold text-[var(--text-secondary)] hover:text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-heading)] transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Back to Feed</span>
+              <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+              <span>Back to feed</span>
             </button>
           </div>
 
-          {/* Heading */}
           <div className="space-y-1">
-            <h1 className="text-[24px] sm:text-[26px] font-extrabold text-[var(--text-heading)] tracking-tight">
+            <h1 className="text-[22px] sm:text-[24px] font-bold text-[var(--text-heading)] tracking-tight">
               {authMode === 'signup'
-                ? 'Join the Campus Pulse'
+                ? 'Create your student account'
                 : authMode === 'login'
-                ? 'Welcome Back to UPSA'
-                : 'Account Recovery'}
+                ? 'Sign in to UPSA Pulse'
+                : 'Reset your password'}
             </h1>
             <p className="text-[14px] text-[var(--text-secondary)] leading-relaxed">
               {authMode === 'signup'
-                ? 'Verified exclusively for UPSA students. 100% pseudonymous on campus.'
+                ? 'Verify your UPSA student index number. Usernames and student IDs remain private to your device.'
                 : authMode === 'login'
-                ? 'Sign in to catch what is happening live across hostels, faculties, and campus spaces.'
-                : 'Enter your UPSA Student Index or Username to receive a secure recovery code.'}
+                ? 'Enter your index number or username and password to continue.'
+                : 'Enter your index number or username to receive a 6-digit recovery code.'}
             </p>
           </div>
 
-          {/* Modern 2-Pill Flow Switcher (Forgot Password is an inline link inside Sign In) */}
           {authMode !== 'forgot' ? (
-            <div className="grid grid-cols-2 p-1 rounded-[12px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
+            <div className="grid grid-cols-2 p-1 rounded-[10px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
               <button
                 type="button"
                 onClick={() => {
                   setAuthMode('signup');
                   setAuthError(null);
+                  setUsernameTakenError(null);
                 }}
-                className={`min-h-[42px] rounded-[9px] text-[14px] font-semibold transition-all cursor-pointer ${
+                className={`min-h-[40px] rounded-[8px] text-[14px] font-semibold transition-all cursor-pointer ${
                   authMode === 'signup'
                     ? 'bg-[#0B2A5B] text-white shadow-sm'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
                 }`}
               >
-                Create Account
+                Create account
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setAuthMode('login');
                   setAuthError(null);
+                  setUsernameTakenError(null);
                 }}
-                className={`min-h-[42px] rounded-[9px] text-[14px] font-semibold transition-all cursor-pointer ${
+                className={`min-h-[40px] rounded-[8px] text-[14px] font-semibold transition-all cursor-pointer ${
                   authMode === 'login'
                     ? 'bg-[#0B2A5B] text-white shadow-sm'
                     : 'text-[var(--text-secondary)] hover:text-[var(--text-heading)]'
                 }`}
               >
-                Sign In
+                Sign in
               </button>
             </div>
           ) : (
@@ -1265,11 +1262,12 @@ export function PulseApp() {
                 onClick={() => {
                   setAuthMode('login');
                   setAuthError(null);
+                  setUsernameTakenError(null);
                 }}
-                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#1C4A8F] hover:underline cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Return to Sign In</span>
+                <span>Return to sign in</span>
               </button>
               <span className="text-[12px] text-[var(--text-secondary)]">
                 Step {forgotStep === 'request' ? '1 of 2' : '2 of 2'}
@@ -1277,23 +1275,21 @@ export function PulseApp() {
             </div>
           )}
 
-          {/* Main Form Container */}
           {authMode === 'signup' ? (
             <form
               onSubmit={handleStudentSignUp}
-              className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4"
+              className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[14px] p-5 sm:p-6 shadow-sm space-y-4"
             >
-              {/* Field 1: UPSA Student Index Number */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label
                     htmlFor="signup-index-number"
                     className="block text-[13px] font-semibold text-[var(--text-heading)]"
                   >
-                    UPSA Student Index Number
+                    UPSA student index number
                   </label>
-                  <span className="text-[11px] font-medium text-[var(--text-secondary)]">
-                    Required for enrollment check
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    Required for student verification
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -1308,21 +1304,21 @@ export function PulseApp() {
                         setSignupIndexNumber(e.target.value);
                         setIndexVerifiedBadge(null);
                       }}
-                      className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                      className="w-full min-h-[44px] px-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => void handleVerifyStudentIndex()}
-                    className="min-h-[46px] px-4 rounded-[10px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] transition-colors cursor-pointer"
+                    className="min-h-[44px] px-4 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] transition-colors cursor-pointer"
                   >
                     Verify
                   </button>
                 </div>
                 {indexVerifiedBadge ? (
-                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#1F7A4D] bg-[#E8F5E9] dark:bg-[#133824]/40 px-2.5 py-1.5 rounded-[8px]">
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#1F7A4D] bg-[#E8F5E9] dark:bg-[#133824]/40 px-2.5 py-1.5 rounded-[6px]">
                     <ShieldCheck className="w-4 h-4 shrink-0 text-[#1F7A4D]" />
-                    <span>✓ {indexVerifiedBadge}</span>
+                    <span>{indexVerifiedBadge}</span>
                   </div>
                 ) : (
                   <p className="text-[11px] text-[var(--text-secondary)]">
@@ -1331,16 +1327,15 @@ export function PulseApp() {
                 )}
               </div>
 
-              {/* Field 2: Secret Username (Private) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label
                     htmlFor="signup-username"
                     className="block text-[13px] font-semibold text-[var(--text-heading)]"
                   >
-                    Secret Username
+                    Secret username
                   </label>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-900/60">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
                     <Lock className="w-3 h-3" />
                     Private to your device
                   </span>
@@ -1357,16 +1352,29 @@ export function PulseApp() {
                     maxLength={24}
                     placeholder="kwame_upsa"
                     value={signupUsername}
-                    onChange={(e) => setSignupUsername(e.target.value)}
-                    className="w-full min-h-[46px] pl-8 pr-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                    onBlur={() => void handleCheckUsernameAvailability()}
+                    onChange={(e) => {
+                      setSignupUsername(e.target.value);
+                      setUsernameTakenError(null);
+                    }}
+                    className={`w-full min-h-[44px] pl-8 pr-3.5 rounded-[8px] border bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 ${
+                      usernameTakenError
+                        ? 'border-rose-500 focus:ring-rose-500'
+                        : 'border-[var(--border-color)] focus:ring-[#0B2A5B]'
+                    }`}
                   />
                 </div>
-                <p className="text-[11px] text-[var(--text-secondary)]">
-                  Used only to log into your account. Threads and comments will only display pseudonyms like OP or Student 4.
-                </p>
+                {usernameTakenError ? (
+                  <p className="text-[12px] font-medium text-rose-600 dark:text-rose-400">
+                    {usernameTakenError}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Each student must have a unique username. It is only used to log into your account; public posts only display pseudonyms.
+                  </p>
+                )}
               </div>
 
-              {/* Field 3: Password with Eye Toggle & Strength Meter */}
               <div className="space-y-1.5">
                 <label
                   htmlFor="signup-password"
@@ -1383,14 +1391,14 @@ export function PulseApp() {
                     placeholder="At least 8 characters"
                     value={signupPassword}
                     onChange={(e) => setSignupPassword(e.target.value)}
-                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                    className="w-full min-h-[44px] pl-3.5 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                   />
                   <button
                     type="button"
                     onClick={() => setShowSignupPassword((prev) => !prev)}
                     aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
                     aria-pressed={showSignupPassword}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
                   >
                     {showSignupPassword ? (
                       <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -1400,7 +1408,6 @@ export function PulseApp() {
                   </button>
                 </div>
 
-                {/* Password Strength Meter */}
                 {signupPassword.length > 0 && (
                   <div className="space-y-1 pt-1">
                     <div className="grid grid-cols-4 gap-1.5 h-1.5">
@@ -1417,9 +1424,7 @@ export function PulseApp() {
                 )}
               </div>
 
-              {/* Elevated Campus Agreement Card (1-Click Master Toggle + Expandable Details) */}
-              <div className="rounded-[12px] border border-[var(--border-color)] bg-[var(--surface-subtle)] p-3.5 space-y-3">
-                {/* Master Fast Agreement Toggle */}
+              <div className="rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-subtle)] p-3.5 space-y-3">
                 <label className="flex items-start gap-3 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1429,22 +1434,21 @@ export function PulseApp() {
                   />
                   <div className="space-y-0.5">
                     <span className="text-[13px] font-semibold text-[var(--text-heading)] block leading-snug">
-                      I confirm I am 18+ and accept UPSA Pulse Campus Standards
+                      I confirm that I am a current student of UPSA and accept the campus standards
                     </span>
                     <span className="text-[11px] text-[var(--text-secondary)] block">
-                      Encompasses Terms of Service, Privacy Notice, and Community Guidelines.
+                      Includes student enrollment confirmation, Terms of Service, Privacy Notice, and Community Guidelines.
                     </span>
                   </div>
                 </label>
 
-                {/* Expandable Review Details */}
                 <div className="pt-2 border-t border-[var(--border-color)]">
                   <button
                     type="button"
                     onClick={() => setShowConsentsDetail((prev) => !prev)}
                     className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#1C4A8F] hover:underline cursor-pointer"
                   >
-                    <span>{showConsentsDetail ? 'Hide detailed legal checklist' : 'Review individual agreements & age status'}</span>
+                    <span>{showConsentsDetail ? 'Hide detailed legal checklist' : 'Review individual agreements & student status'}</span>
                     {showConsentsDetail ? (
                       <ChevronUp className="w-3.5 h-3.5" />
                     ) : (
@@ -1453,7 +1457,7 @@ export function PulseApp() {
                   </button>
 
                   {showConsentsDetail && (
-                    <div className="mt-3 space-y-2.5 pl-1 animate-in fade-in duration-200">
+                    <div className="mt-3 space-y-2.5 pl-1">
                       <label className="flex items-center gap-2.5 cursor-pointer text-[12px]">
                         <input
                           type="checkbox"
@@ -1461,7 +1465,7 @@ export function PulseApp() {
                           onChange={(e) => setAdultConfirmed(e.target.checked)}
                           className="w-4 h-4 rounded-[4px] accent-[#0B2A5B]"
                         />
-                        <span>I confirm that I am 18 years of age or older.</span>
+                        <span>I confirm that I am a current student of the University of Professional Studies, Accra (UPSA).</span>
                       </label>
 
                       <label className="flex items-center gap-2.5 cursor-pointer text-[12px]">
@@ -1515,32 +1519,30 @@ export function PulseApp() {
                   )}
                 </div>
 
-                {/* Privacy & DPA Act 843 Assurance Seal */}
                 <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)] pt-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#1F7A4D] shrink-0" />
-                  <span>Protected under Ghana Data Protection Act (Act 843). Zero telemetry or phone tracking.</span>
+                  <span>Protected under Ghana Data Protection Act, 2012 (Act 843). Zero telemetry or phone tracking.</span>
                 </div>
               </div>
 
               {authError && (
-                <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                <div className="p-3 rounded-[8px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
                   {authError}
                 </div>
               )}
 
-              {/* Submit Button */}
               <button
                 type="submit"
-                disabled={!allConsented || authSubmitting}
-                className="w-full min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                disabled={!allConsented || Boolean(usernameTakenError) || authSubmitting}
+                className="w-full min-h-[46px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 {authSubmitting ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Verifying Student Account...</span>
+                    <span>Verifying student account...</span>
                   </>
                 ) : (
-                  <span>Create Student Account</span>
+                  <span>Create student account</span>
                 )}
               </button>
 
@@ -1551,6 +1553,7 @@ export function PulseApp() {
                   onClick={() => {
                     setAuthMode('login');
                     setAuthError(null);
+                    setUsernameTakenError(null);
                   }}
                   className="font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
                 >
@@ -1561,15 +1564,14 @@ export function PulseApp() {
           ) : authMode === 'login' ? (
             <form
               onSubmit={handleStudentLogin}
-              className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4"
+              className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[14px] p-5 sm:p-6 shadow-sm space-y-4"
             >
-              {/* Login Identifier */}
               <div className="space-y-1.5">
                 <label
                   htmlFor="login-identifier"
                   className="block text-[13px] font-semibold text-[var(--text-heading)]"
                 >
-                  UPSA Index Number or Secret Username
+                  UPSA index number or secret username
                 </label>
                 <input
                   id="login-identifier"
@@ -1578,11 +1580,10 @@ export function PulseApp() {
                   placeholder="e.g. 10284912 or kwame_upsa"
                   value={loginIdentifier}
                   onChange={(e) => setLoginIdentifier(e.target.value)}
-                  className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                  className="w-full min-h-[44px] px-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                 />
               </div>
 
-              {/* Password */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label
@@ -1598,7 +1599,7 @@ export function PulseApp() {
                       setForgotIdentifier(loginIdentifier);
                       setAuthError(null);
                     }}
-                    className="text-[12px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+                    className="text-[12px] font-medium text-[#1C4A8F] hover:underline cursor-pointer"
                   >
                     Forgot password?
                   </button>
@@ -1611,14 +1612,14 @@ export function PulseApp() {
                     placeholder="Enter your password"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                    className="w-full min-h-[44px] pl-3.5 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                   />
                   <button
                     type="button"
                     onClick={() => setShowLoginPassword((prev) => !prev)}
                     aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
                     aria-pressed={showLoginPassword}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
                   >
                     {showLoginPassword ? (
                       <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -1630,24 +1631,23 @@ export function PulseApp() {
               </div>
 
               {authError && (
-                <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                <div className="p-3 rounded-[8px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
                   {authError}
                 </div>
               )}
 
-              {/* Submit Button */}
               <button
                 type="submit"
                 disabled={authSubmitting}
-                className="w-full min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full min-h-[46px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
               >
                 {authSubmitting ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Signing In...</span>
+                    <span>Signing in...</span>
                   </>
                 ) : (
-                  <span>Sign In to Campus Feed</span>
+                  <span>Sign in</span>
                 )}
               </button>
 
@@ -1658,6 +1658,7 @@ export function PulseApp() {
                   onClick={() => {
                     setAuthMode('signup');
                     setAuthError(null);
+                    setUsernameTakenError(null);
                   }}
                   className="font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
                 >
@@ -1666,8 +1667,7 @@ export function PulseApp() {
               </p>
             </form>
           ) : (
-            /* Forgot Password Flow */
-            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[14px] p-5 sm:p-6 shadow-sm space-y-4">
               {forgotStep === 'request' ? (
                 <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
                   <div className="space-y-1.5">
@@ -1675,7 +1675,7 @@ export function PulseApp() {
                       htmlFor="forgot-identifier"
                       className="block text-[13px] font-semibold text-[var(--text-heading)]"
                     >
-                      UPSA Index Number or Secret Username
+                      UPSA index number or secret username
                     </label>
                     <input
                       id="forgot-identifier"
@@ -1684,7 +1684,7 @@ export function PulseApp() {
                       placeholder="e.g. 10284912 or kwame_upsa"
                       value={forgotIdentifier}
                       onChange={(e) => setForgotIdentifier(e.target.value)}
-                      className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                      className="w-full min-h-[44px] px-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                     />
                     <p className="text-[11px] text-[var(--text-secondary)]">
                       A 6-digit recovery code will be dispatched to your student inbox or registered device.
@@ -1692,7 +1692,7 @@ export function PulseApp() {
                   </div>
 
                   {authError && (
-                    <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                    <div className="p-3 rounded-[8px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
                       {authError}
                     </div>
                   )}
@@ -1700,22 +1700,22 @@ export function PulseApp() {
                   <button
                     type="submit"
                     disabled={authSubmitting}
-                    className="w-full min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full min-h-[46px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {authSubmitting ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Sending Recovery Code...</span>
+                        <span>Sending recovery code...</span>
                       </>
                     ) : (
-                      <span>Send 6-Digit Recovery Code</span>
+                      <span>Send recovery code</span>
                     )}
                   </button>
                 </form>
               ) : (
                 <form onSubmit={handleForgotPasswordReset} className="space-y-4">
                   {forgotStatusMsg && (
-                    <div className="p-3.5 rounded-[10px] bg-[#DCE6F5] dark:bg-[#1C4A8F]/30 text-[#0B2A5B] dark:text-[#DCE6F5] text-[13px] font-semibold">
+                    <div className="p-3 rounded-[8px] bg-[#DCE6F5] dark:bg-[#1C4A8F]/30 text-[#0B2A5B] dark:text-[#DCE6F5] text-[13px] font-semibold">
                       {forgotStatusMsg}
                     </div>
                   )}
@@ -1725,7 +1725,7 @@ export function PulseApp() {
                       htmlFor="forgot-code"
                       className="block text-[13px] font-semibold text-[var(--text-heading)]"
                     >
-                      6-Digit Recovery Code
+                      6-digit recovery code
                     </label>
                     <input
                       id="forgot-code"
@@ -1736,7 +1736,7 @@ export function PulseApp() {
                       placeholder="••••••"
                       value={forgotResetCode}
                       onChange={(e) => setForgotResetCode(e.target.value)}
-                      className="w-full min-h-[46px] px-3.5 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[20px] tracking-[0.3em] font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                      className="w-full min-h-[44px] px-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[20px] tracking-[0.3em] font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                     />
                   </div>
 
@@ -1745,7 +1745,7 @@ export function PulseApp() {
                       htmlFor="forgot-new-password"
                       className="block text-[13px] font-semibold text-[var(--text-heading)]"
                     >
-                      New Password
+                      New password
                     </label>
                     <div className="relative">
                       <input
@@ -1756,14 +1756,14 @@ export function PulseApp() {
                         placeholder="At least 8 characters"
                         value={forgotNewPassword}
                         onChange={(e) => setForgotNewPassword(e.target.value)}
-                        className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                        className="w-full min-h-[44px] pl-3.5 pr-11 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                       />
                       <button
                         type="button"
                         onClick={() => setShowForgotNewPassword((prev) => !prev)}
                         aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
                         aria-pressed={showForgotNewPassword}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-heading)] rounded-[6px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B] cursor-pointer"
                       >
                         {showForgotNewPassword ? (
                           <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -1775,7 +1775,7 @@ export function PulseApp() {
                   </div>
 
                   {authError && (
-                    <div className="p-3 rounded-[10px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
+                    <div className="p-3 rounded-[8px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[13px] font-semibold text-[#A32121] dark:text-rose-400">
                       {authError}
                     </div>
                   )}
@@ -1784,23 +1784,23 @@ export function PulseApp() {
                     <button
                       type="submit"
                       disabled={authSubmitting}
-                      className="flex-1 min-h-[48px] rounded-[10px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                      className="flex-1 min-h-[46px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                     >
                       {authSubmitting ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Updating Password...</span>
+                          <span>Updating password...</span>
                         </>
                       ) : (
-                        <span>Set New Password & Sign In</span>
+                        <span>Update password</span>
                       )}
                     </button>
                     <button
                       type="button"
                       onClick={() => setForgotStep('request')}
-                      className="min-h-[48px] px-4 rounded-[10px] border border-[var(--border-color)] text-[13px] font-semibold hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer"
+                      className="min-h-[46px] px-4 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold hover:bg-[var(--surface-subtle)] transition-colors cursor-pointer"
                     >
-                      Resend Code
+                      Resend code
                     </button>
                   </div>
                 </form>
