@@ -1283,28 +1283,6 @@ export function PulseApp() {
               onSubmit={handleStudentSignUp}
               className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4"
             >
-              {/* Google Fast SSO */}
-              <button
-                type="button"
-                disabled={authSubmitting}
-                onClick={() => void handleContinueWithGoogle()}
-                className="w-full min-h-[46px] px-4 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-colors cursor-pointer group"
-              >
-                <GoogleLogoSvg className="w-5 h-5 shrink-0" />
-                <span>Continue with UPSA Student Google</span>
-                <span className="hidden sm:inline-block text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--surface-subtle)] px-2 py-0.5 rounded-full border border-[var(--border-color)]">
-                  @st.upsa.edu.gh
-                </span>
-              </button>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-[var(--border-color)]" />
-                <span className="flex-shrink mx-3 text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                  or sign up with index number
-                </span>
-                <div className="flex-grow border-t border-[var(--border-color)]" />
-              </div>
-
               {/* Field 1: UPSA Student Index Number */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -1585,25 +1563,6 @@ export function PulseApp() {
               onSubmit={handleStudentLogin}
               className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[16px] p-5 sm:p-6 shadow-sm space-y-4"
             >
-              {/* Google SSO Button */}
-              <button
-                type="button"
-                disabled={authSubmitting}
-                onClick={() => void handleContinueWithGoogle()}
-                className="w-full min-h-[46px] px-4 rounded-[10px] border border-[var(--border-color)] bg-[var(--surface-app)] hover:bg-[var(--surface-subtle)] text-[var(--text-heading)] font-semibold text-[14px] flex items-center justify-center gap-2.5 transition-colors cursor-pointer group"
-              >
-                <GoogleLogoSvg className="w-5 h-5 shrink-0" />
-                <span>Continue with UPSA Student Google</span>
-              </button>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-[var(--border-color)]" />
-                <span className="flex-shrink mx-3 text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
-                  or sign in with credentials
-                </span>
-                <div className="flex-grow border-t border-[var(--border-color)]" />
-              </div>
-
               {/* Login Identifier */}
               <div className="space-y-1.5">
                 <label
