@@ -756,8 +756,13 @@ export function PulseApp() {
   const handleVerifyStudentIndex = async () => {
     setAuthError(null);
     setIndexVerifiedBadge(null);
-    if (!signupIndexNumber.trim()) {
-      setAuthError('Enter your UPSA student index number first.');
+    const raw = signupIndexNumber.trim();
+    if (!raw) {
+      setAuthError('Enter your UPSA student index number first (e.g. 10284912).');
+      return;
+    }
+    if (raw.length < 6) {
+      setAuthError('UPSA student index number must be at least 6 characters.');
       return;
     }
     const res = await fetch('/api/auth/otp', {
@@ -765,11 +770,16 @@ export function PulseApp() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         step: 'verify_index',
-        indexNumber: signupIndexNumber.trim(),
+        indexNumber: raw,
       }),
     });
     const json = await res.json();
     if (res.ok && json.success) {
+      if (json.data.valid === false) {
+        setAuthError(json.data.message ?? 'Could not verify UPSA index number.');
+        setIndexVerifiedBadge(null);
+        return;
+      }
       setSignupIndexNumber(json.data.normalizedIndex);
       setIndexVerifiedBadge(
         json.data.verificationMode === 'external_api' || json.data.verificationMode === 'api_key_ready'
@@ -783,8 +793,20 @@ export function PulseApp() {
 
   const handleCheckUsernameAvailability = async () => {
     const raw = signupUsername.trim();
-    if (raw.length < 3) {
+    if (!raw) {
       setUsernameTakenError(null);
+      return;
+    }
+    if (raw.length < 3) {
+      setUsernameTakenError('Username must be at least 3 characters.');
+      return;
+    }
+    if (raw.length > 24) {
+      setUsernameTakenError('Username cannot exceed 24 characters.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(raw)) {
+      setUsernameTakenError('Username can only contain letters, numbers, and underscores.');
       return;
     }
     try {
@@ -799,7 +821,9 @@ export function PulseApp() {
       const json = await res.json();
       if (res.ok && json.success) {
         if (!json.data.available) {
-          setUsernameTakenError('This username is already taken. Please choose another username.');
+          setUsernameTakenError(
+            json.data.reason ?? 'This username is already taken. Please choose another username.'
+          );
         } else {
           setUsernameTakenError(null);
         }
@@ -813,6 +837,36 @@ export function PulseApp() {
     e.preventDefault();
     setAuthError(null);
     setUsernameTakenError(null);
+
+    const user = signupUsername.trim();
+    const idx = signupIndexNumber.trim();
+    const pwd = signupPassword;
+
+    if (user.length < 3) {
+      setAuthError('Username must be at least 3 characters.');
+      return;
+    }
+    if (user.length > 24) {
+      setAuthError('Username cannot exceed 24 characters.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(user)) {
+      setAuthError('Username can only use letters, numbers, and underscores.');
+      return;
+    }
+    if (idx.length < 6) {
+      setAuthError('Enter your valid UPSA student index number.');
+      return;
+    }
+    if (pwd.length < 8) {
+      setAuthError('Password must be at least 8 characters.');
+      return;
+    }
+    if (!adultConfirmed || !termsChecked || !privacyChecked || !guidelinesChecked) {
+      setAuthError('Please confirm you are a current UPSA student and accept the terms and guidelines.');
+      return;
+    }
+
     setAuthSubmitting(true);
     try {
       const res = await fetch('/api/auth/otp', {
@@ -820,9 +874,9 @@ export function PulseApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           step: 'signup',
-          username: signupUsername.trim(),
-          indexNumber: signupIndexNumber.trim(),
-          password: signupPassword,
+          username: user,
+          indexNumber: idx,
+          password: pwd,
           email: signupEmail.trim() || undefined,
           adultConfirmed,
           termsAccepted: termsChecked,
@@ -857,6 +911,15 @@ export function PulseApp() {
   const handleStudentLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+    const ident = loginIdentifier.trim();
+    if (!ident) {
+      setAuthError('Enter your UPSA index number or username.');
+      return;
+    }
+    if (!loginPassword) {
+      setAuthError('Enter your password.');
+      return;
+    }
     setAuthSubmitting(true);
     try {
       const res = await fetch('/api/auth/otp', {
@@ -864,7 +927,7 @@ export function PulseApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           step: 'login',
-          identifier: loginIdentifier.trim(),
+          identifier: ident,
           password: loginPassword,
         }),
       });

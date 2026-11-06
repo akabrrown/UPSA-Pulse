@@ -35,3 +35,4 @@ describe('Background Feed Synchronization Worker (FEED-WORKER-1)', () => {
     expect(content).toContain('params.set(\'kind\', \'ask\')');
   });
 });
+

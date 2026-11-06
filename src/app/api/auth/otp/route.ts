@@ -27,18 +27,26 @@ export async function POST(req: NextRequest) {
     const env = getServerEnv();
 
     if (body.step === 'verify_index') {
-      const rawIndex = typeof body.indexNumber === 'string' ? body.indexNumber : '';
+      const rawIndex = typeof body.indexNumber === 'string' ? body.indexNumber.trim() : '';
+      if (!rawIndex) {
+        return apiSuccess({
+          valid: false,
+          reason: 'empty_index',
+          message: 'Enter your UPSA student index number first (e.g. 10284912).',
+        });
+      }
       const check = await verifyStudentIndexWithApiKey(
         rawIndex,
         env.UPSA_INDEX_VERIFICATION_API_KEY,
         env.UPSA_INDEX_VERIFICATION_API_URL
       );
       if (!check.valid) {
-        return apiError(
-          check.reason ?? 'invalid_index_number',
-          'Unable to verify UPSA student index number. Check your 8–10 digit index number and try again.',
-          400
-        );
+        return apiSuccess({
+          valid: false,
+          reason: check.reason ?? 'invalid_index_number',
+          message:
+            'Unable to verify UPSA student index number. Check your 8–10 digit index number (e.g. 10284912) and try again.',
+        });
       }
       return apiSuccess(check);
     }
@@ -46,10 +54,32 @@ export async function POST(req: NextRequest) {
     if (body.step === 'check_username') {
       const rawUser = typeof body.username === 'string' ? body.username.trim() : '';
       if (rawUser.length < 3) {
-        return apiError('invalid_username', 'Username must be at least 3 characters.', 400);
+        return apiSuccess({
+          available: false,
+          reason: 'Username must be at least 3 characters.',
+          username: rawUser,
+        });
+      }
+      if (rawUser.length > 24) {
+        return apiSuccess({
+          available: false,
+          reason: 'Username cannot exceed 24 characters.',
+          username: rawUser,
+        });
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(rawUser)) {
+        return apiSuccess({
+          available: false,
+          reason: 'Username can only contain letters, numbers, and underscores.',
+          username: rawUser,
+        });
       }
       const isTaken = await dbCheckUsernameTaken(rawUser);
-      return apiSuccess({ available: !isTaken, username: rawUser });
+      return apiSuccess({
+        available: !isTaken,
+        username: rawUser,
+        reason: isTaken ? 'This username is already taken. Please choose another username.' : undefined,
+      });
     }
 
     if (body.step === 'signup') {
