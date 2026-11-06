@@ -184,6 +184,10 @@ export function mapDomainErrorToResponse(err: unknown) {
     case 'target_unavailable':
       return apiError(code, 'This item is no longer available.', 404);
     default:
+      if (!/^[a-z][a-z0-9_]*$/.test(code)) {
+        console.error('[api] unhandled error:', err);
+        return apiError('internal_error', 'Something went wrong on our side. Please try again.', 500);
+      }
       return apiError(code, 'Request could not be completed.', 400);
   }
 }

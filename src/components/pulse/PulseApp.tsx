@@ -47,6 +47,25 @@ import type { FeedSort, ReportReason } from '@/lib/validation/schemas';
 type ActiveTab = 'feed' | 'channels' | 'alerts' | 'me';
 type OnboardingStage = 'none' | 'welcome' | 'signup' | 'otp' | 'location_explainer' | 'outside_zone';
 
+const DEVICE_TOKEN_STORAGE_KEY = 'upsa_pulse_device_token';
+
+function getBrowserDeviceToken(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    let token = window.localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY);
+    if (!token || token.length < 8) {
+      token =
+        typeof window.crypto?.randomUUID === 'function'
+          ? window.crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      window.localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, token);
+    }
+    return token;
+  } catch {
+    return undefined;
+  }
+}
+
 const REPORT_REASONS: Array<{ value: ReportReason; label: string; detail: string; priority: boolean }> = [
   {
     value: 'self_harm',
@@ -895,6 +914,7 @@ export function PulseApp() {
           termsAccepted: termsChecked,
           privacyAccepted: privacyChecked,
           guidelinesAccepted: guidelinesChecked,
+          deviceToken: getBrowserDeviceToken(),
         }),
       });
       const json = await res.json();
@@ -942,6 +962,7 @@ export function PulseApp() {
           step: 'login',
           identifier: ident,
           password: loginPassword,
+          deviceToken: getBrowserDeviceToken(),
         }),
       });
       const json = await res.json();
