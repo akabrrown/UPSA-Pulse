@@ -2,12 +2,13 @@ import type { NextConfig } from 'next';
 
 const cspHeader = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* http://localhost:*",
-  "frame-ancestors 'none'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
+  "style-src 'self' 'unsafe-inline' https://vercel.live",
+  "img-src 'self' data: blob: https://vercel.live https://vercel.com",
+  "font-src 'self' data: https://fonts.gstatic.com https://vercel.live https://assets.vercel.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* http://localhost:* https://vercel.live wss://ws-*.pusher.com",
+  "frame-src 'self' https://vercel.live",
+  "frame-ancestors 'self' https://vercel.live",
   "base-uri 'self'",
   "form-action 'self'",
 ].join('; ');

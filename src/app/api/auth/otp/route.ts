@@ -18,7 +18,7 @@ import {
   dbSignUpStudent,
 } from '@/lib/db/postgres';
 import { getServerEnv } from '@/lib/env';
-import { apiError, apiSuccess, mapDomainErrorToResponse } from '@/lib/api-helpers';
+import { apiError, apiSuccess, attachSessionCookie, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function POST(req: NextRequest) {
   try {
@@ -75,13 +75,14 @@ export async function POST(req: NextRequest) {
         pepper: env.DEVICE_HASH_PEPPER,
       });
 
-      return apiSuccess(
+      const res = apiSuccess(
         {
           ...created,
           verificationMode: indexCheck.verificationMode,
         },
         201
       );
+      return attachSessionCookie(res, created.userId, env.DEVICE_HASH_PEPPER);
     }
 
     if (body.step === 'login') {
@@ -101,7 +102,8 @@ export async function POST(req: NextRequest) {
         pepper: env.DEVICE_HASH_PEPPER,
       });
 
-      return apiSuccess(session);
+      const res = apiSuccess(session);
+      return attachSessionCookie(res, session.userId, env.DEVICE_HASH_PEPPER);
     }
 
     if (body.step === 'google') {
@@ -139,7 +141,8 @@ export async function POST(req: NextRequest) {
         pepper: env.DEVICE_HASH_PEPPER,
       });
 
-      return apiSuccess(session);
+      const res = apiSuccess(session);
+      return attachSessionCookie(res, session.userId, env.DEVICE_HASH_PEPPER);
     }
 
     if (body.step === 'forgot_password_request') {
@@ -220,7 +223,8 @@ export async function POST(req: NextRequest) {
       pepper: env.DEVICE_HASH_PEPPER,
     });
 
-    return apiSuccess(registration);
+    const res = apiSuccess(registration);
+    return attachSessionCookie(res, registration.userId, env.DEVICE_HASH_PEPPER);
   } catch (err) {
     return mapDomainErrorToResponse(err);
   }

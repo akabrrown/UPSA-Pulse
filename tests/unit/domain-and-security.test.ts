@@ -7,6 +7,8 @@ import {
   isAllowedEmailDomain,
   generateThreadGlyph,
   formatThreadAlias,
+  signSessionToken,
+  verifySessionToken,
 } from '@/lib/domain/pulse-engine';
 import {
   signUpConsentSchema,
@@ -169,6 +171,39 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
           actorUserId: '550e8400-e29b-41d4-a716-446655440001', // same user!
         }).success
       ).toBe(false);
+    });
+  });
+
+  describe('Tamper-Proof Session Cookie Protection (DPA Act 843 & SEC-1)', () => {
+    const pepper = 'upsa-test-session-secret-pepper-32-chars';
+    const userId = '11111111-1111-4111-8111-111111111111';
+
+    it('signs and verifies authentic session tokens using HMAC-SHA256', () => {
+      const signed = signSessionToken(userId, pepper);
+      expect(signed).toContain(`${userId}.`);
+      const verified = verifySessionToken(signed, pepper);
+      expect(verified).toBe(userId);
+    });
+
+    it('rejects tampered session tokens, modified signatures, and wrong peppers', () => {
+      const signed = signSessionToken(userId, pepper);
+      const [id, sig] = signed.split('.');
+
+      // Tampered user ID with original signature
+      const tamperedId = `${id?.slice(0, -1)}2.${sig}`;
+      expect(verifySessionToken(tamperedId, pepper)).toBeNull();
+
+      // Tampered signature
+      const tamperedSig = `${id}.${sig?.slice(0, -2)}ff`;
+      expect(verifySessionToken(tamperedSig, pepper)).toBeNull();
+
+      // Wrong secret/pepper
+      expect(verifySessionToken(signed, 'different-wrong-pepper-secret')).toBeNull();
+    });
+
+    it('gracefully handles raw UUID fallback for backwards compatibility', () => {
+      expect(verifySessionToken(userId, pepper)).toBe(userId);
+      expect(verifySessionToken('invalid-non-uuid-string', pepper)).toBeNull();
     });
   });
 });

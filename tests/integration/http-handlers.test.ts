@@ -19,6 +19,7 @@ import { POST as postAdminAction } from '@/app/api/admin/actions/route';
 import { GET as getAdminConfig, PUT as putAdminConfig } from '@/app/api/admin/config/route';
 import { POST as postAdminUnmask } from '@/app/api/admin/unmask/route';
 import { POST as postAuthOtp } from '@/app/api/auth/otp/route';
+import { POST as postLogout } from '@/app/api/auth/logout/route';
 import { POST as postAppeal, PATCH as patchAppeal } from '@/app/api/appeals/route';
 import { POST as postApproveDevice } from '@/app/api/devices/approve/route';
 import { GET as getAdminLookup } from '@/app/api/admin/lookup/route';
@@ -645,6 +646,18 @@ describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
     expect(loginIndexRes.status).toBe(200);
     const loginIndexJson = await loginIndexRes.json();
     expect(loginIndexJson.data.username).toBe('kwame_upsa');
+
+    // Verify tamper-proof HTTP-only session cookie issuance (DPA Act 843 & SEC-1)
+    const setCookie = loginIndexRes.headers.get('set-cookie');
+    expect(setCookie).toContain('pulse_uid=');
+    expect(setCookie?.toLowerCase()).toContain('httponly');
+    expect(setCookie?.toLowerCase()).toContain('samesite=lax');
+
+    // Verify secure logout clears the session cookie
+    const logoutRes = await postLogout();
+    expect(logoutRes.status).toBe(200);
+    const logoutCookie = logoutRes.headers.get('set-cookie');
+    expect(logoutCookie?.toLowerCase()).toContain('max-age=0');
 
     const loginUserRes = await postAuthOtp(
       makeReq('http://localhost:3000/api/auth/otp', {

@@ -608,10 +608,9 @@ export function PulseApp() {
     }
   };
 
-  const setSessionUserCookie = (userId: string) => {
-    if (typeof document !== 'undefined' && userId) {
-      document.cookie = `pulse_uid=${encodeURIComponent(userId)}; path=/; max-age=2592000; SameSite=Lax`;
-    }
+  const setSessionUserCookie = (_userId: string) => {
+    // Session cookies are set exclusively server-side via HttpOnly, Secure, SameSite=Lax
+    // to strictly protect against XSS token harvesting and client-side cookie tampering.
   };
 
   const handleVerifyStudentIndex = async () => {
@@ -2867,6 +2866,7 @@ export function PulseApp() {
                   <button
                     type="button"
                     onClick={() => {
+                      void fetch('/api/auth/logout', { method: 'POST' });
                       setAuthMode('signup');
                       setOnboardingStage('signup');
                     }}

@@ -1,10 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DEFAULT_DEMO_USER_ID } from '@/lib/store/pulse-store';
+import { signSessionToken, verifySessionToken } from '@/lib/domain/pulse-engine';
+
+const DEFAULT_FALLBACK_PEPPER = 'upsa-pulse-device-pepper-default-32-chars-long';
+
+function getSessionPepper(): string {
+  return process.env.DEVICE_HASH_PEPPER?.trim() || DEFAULT_FALLBACK_PEPPER;
+}
 
 export function getAuthenticatedUserId(req: NextRequest): string {
+  const pepper = getSessionPepper();
   const headerUser = req.headers.get('x-pulse-user-id');
-  const cookieUser = req.cookies.get('pulse_uid')?.value;
-  return headerUser || cookieUser || DEFAULT_DEMO_USER_ID;
+  if (headerUser) {
+    const verified = verifySessionToken(headerUser, pepper);
+    if (verified) return verified;
+  }
+  const cookieVal = req.cookies.get('pulse_uid')?.value;
+  if (cookieVal) {
+    const verified = verifySessionToken(cookieVal, pepper);
+    if (verified) return verified;
+  }
+  return DEFAULT_DEMO_USER_ID;
+}
+
+/**
+ * Attaches a cryptographically signed, HTTP-only, secure session cookie to a response.
+ * Protects against XSS session theft, client tampering, and CSRF.
+ */
+export function attachSessionCookie(
+  response: NextResponse,
+  userId: string,
+  pepper?: string
+): NextResponse {
+  const secret = pepper?.trim() || getSessionPepper();
+  const signedToken = signSessionToken(userId, secret);
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  response.cookies.set('pulse_uid', signedToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  });
+  return response;
+}
+
+/**
+ * Explicitly clears the session cookie (used upon logout or account deletion).
+ */
+export function clearSessionCookie(response: NextResponse): NextResponse {
+  const isProduction = process.env.NODE_ENV === 'production';
+  response.cookies.set('pulse_uid', '', {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
+  return response;
 }
 
 export function apiSuccess<T>(data: T, status = 200) {

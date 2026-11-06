@@ -5,7 +5,7 @@ import {
   dbGetMeAndNotifications,
   dbMarkNotificationsRead,
 } from '@/lib/db/postgres';
-import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
+import { apiError, apiSuccess, clearSessionCookie, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function GET(req: NextRequest) {
   try {
@@ -41,7 +41,8 @@ export async function DELETE(req: NextRequest) {
 
     const userId = getAuthenticatedUserId(req);
     const result = await dbDeleteAccount(userId, parsed.data);
-    return apiSuccess(result);
+    const res = apiSuccess(result);
+    return clearSessionCookie(res);
   } catch (err) {
     return mapDomainErrorToResponse(err);
   }
