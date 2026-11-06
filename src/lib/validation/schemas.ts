@@ -68,7 +68,7 @@ export const studentSignUpSchema = z.object({
     .string()
     .min(8, 'Password must be at least 8 characters')
     .max(128, 'Password cannot exceed 128 characters'),
-  email: z.string().trim().email().optional(),
+  email: z.string().trim().email().optional().or(z.literal('')).or(z.null()),
   adultConfirmed: z.literal(true, {
     errorMap: () => ({ message: 'You must confirm that you are a current UPSA student.' }),
   }),

@@ -360,9 +360,9 @@ export function normalizeUpsaIndexNumber(indexNumber: string): string {
  */
 export function isValidUpsaIndexNumber(indexNumber: string): boolean {
   const normalized = normalizeUpsaIndexNumber(indexNumber);
-  if (/^\d{8,10}$/.test(normalized)) return true;
-  if (/^[A-Z]{2,6}\/[A-Z]{2,6}\/\d{2,4}\/\d{3,6}$/.test(normalized)) return true;
-  if (/^[A-Z]{2,6}\d{6,10}$/.test(normalized)) return true;
+  if (/^\d{6,12}$/.test(normalized)) return true;
+  if (/^[A-Z]{2,6}\/[A-Z0-9]{2,6}\/\d{2,4}\/\d{3,6}$/.test(normalized)) return true;
+  if (/^[A-Z]{2,6}\d{6,12}$/.test(normalized)) return true;
   return false;
 }
 

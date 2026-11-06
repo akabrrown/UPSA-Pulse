@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
         username: parsed.data.username,
         indexNumber: indexCheck.normalizedIndex,
         password: parsed.data.password,
-        email: parsed.data.email,
+        email: parsed.data.email || undefined,
         rawDeviceToken: parsed.data.deviceToken ?? 'default-browser-device-token',
         pepper: env.DEVICE_HASH_PEPPER,
       });
