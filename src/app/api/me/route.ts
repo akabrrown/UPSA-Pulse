@@ -5,11 +5,14 @@ import {
   dbGetMeAndNotifications,
   dbMarkNotificationsRead,
 } from '@/lib/db/postgres';
-import { apiError, apiSuccess, clearSessionCookie, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
+import { apiError, apiSuccess, clearSessionCookie, getAuthenticatedUserId, getOptionalAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function GET(req: NextRequest) {
   try {
-    const userId = getAuthenticatedUserId(req);
+    const userId = getOptionalAuthenticatedUserId(req);
+    if (!userId) {
+      return apiSuccess({ profile: null, notifications: [] });
+    }
     const data = await dbGetMeAndNotifications(userId);
     return apiSuccess(data);
   } catch (err) {

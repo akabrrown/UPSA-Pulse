@@ -8,7 +8,7 @@ function getSessionPepper(): string {
   return process.env.DEVICE_HASH_PEPPER?.trim() || DEFAULT_FALLBACK_PEPPER;
 }
 
-export function getAuthenticatedUserId(req: NextRequest): string {
+export function getOptionalAuthenticatedUserId(req: NextRequest): string | null {
   const pepper = getSessionPepper();
   const headerUser = req.headers.get('x-pulse-user-id');
   if (headerUser) {
@@ -20,6 +20,12 @@ export function getAuthenticatedUserId(req: NextRequest): string {
     const verified = verifySessionToken(cookieVal, pepper);
     if (verified) return verified;
   }
+  return null;
+}
+
+export function getAuthenticatedUserId(req: NextRequest): string {
+  const verified = getOptionalAuthenticatedUserId(req);
+  if (verified) return verified;
   return DEFAULT_DEMO_USER_ID;
 }
 

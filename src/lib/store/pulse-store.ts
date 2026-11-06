@@ -647,7 +647,7 @@ export function getZonesFromStore(): ZonePolygonConfig[] {
 }
 
 export function getFeedFromStore(params: {
-  userId: string;
+  userId?: string;
   sort?: FeedSort;
   channelId?: number;
   zoneId?: number;
@@ -659,7 +659,7 @@ export function getFeedFromStore(params: {
   zoneName: string;
   zones: ZonePolygonConfig[];
 } {
-  const profile = requireActiveZoneUser(params.userId);
+  const profile = params.userId ? requireActiveZoneUser(params.userId) : null;
   const sort = params.sort ?? 'hot';
   const limit = Math.min(params.limit ?? 20, 50);
   const now = new Date();
@@ -694,14 +694,16 @@ export function getFeedFromStore(params: {
   const selectedZone =
     params.zoneId !== undefined
       ? state.zones.find((z) => z.id === params.zoneId)
-      : state.zones.find((z) => z.id === profile.zoneId);
+      : profile
+      ? state.zones.find((z) => z.id === profile.zoneId)
+      : null;
   const zoneName =
     params.zoneId !== undefined
       ? selectedZone?.name ?? 'UPSA Main Campus'
       : selectedZone?.name ?? 'All UPSA Places';
 
   return {
-    items: sliced.map((p) => toPublicPostView(p, params.userId)),
+    items: sliced.map((p) => toPublicPostView(p, params.userId ?? '')),
     nextCursor: sliced.length === limit ? sliced[sliced.length - 1]?.id ?? null : null,
     zoneName,
     zones: getZonesFromStore(),

@@ -731,5 +731,21 @@ describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
     );
     expect(loginNewPassRes.status).toBe(200);
   });
+
+  it('allows unauthenticated visitors to fetch public feed and /api/me without 403 errors', async () => {
+    const feedRes = await getFeed(makeReq('http://localhost:3000/api/feed?sort=hot'));
+    expect(feedRes.status).toBe(200);
+    const feedJson = await feedRes.json();
+    expect(feedJson.success).toBe(true);
+    expect(Array.isArray(feedJson.data.items)).toBe(true);
+    expect(Array.isArray(feedJson.data.channels)).toBe(true);
+    expect(Array.isArray(feedJson.data.zones)).toBe(true);
+
+    const meRes = await getMe(makeReq('http://localhost:3000/api/me'));
+    expect(meRes.status).toBe(200);
+    const meJson = await meRes.json();
+    expect(meJson.success).toBe(true);
+    expect(meJson.data.profile).toBeNull();
+  });
 });
 

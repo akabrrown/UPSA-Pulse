@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { feedQuerySchema } from '@/lib/validation/schemas';
 import { dbGetFeed } from '@/lib/db/postgres';
-import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
+import { apiError, apiSuccess, getOptionalAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
       return apiError('invalid_query', 'Invalid feed filter parameters.', 400);
     }
 
-    const userId = getAuthenticatedUserId(req);
+    const userId = getOptionalAuthenticatedUserId(req);
     const feed = await dbGetFeed({
-      userId,
+      userId: userId ?? undefined,
       sort: parsed.data.sort,
       channelId: parsed.data.channelId,
       zoneId: parsed.data.zoneId,

@@ -181,7 +181,7 @@ export async function dbVerifyUserZone(
 }
 
 export async function dbGetFeed(params: {
-  userId: string;
+  userId?: string;
   sort?: FeedSort;
   channelId?: number;
   zoneId?: number;
@@ -200,20 +200,35 @@ export async function dbGetFeed(params: {
     return { ...feed, channels };
   }
 
-  return withAuthenticatedUser(params.userId, async (client) => {
-    const sort = params.sort ?? 'hot';
-    const limit = Math.min(params.limit ?? 20, 50);
+  const pool = getPgPool();
+  const sort = params.sort ?? 'hot';
+  const limit = Math.min(params.limit ?? 20, 50);
 
-    // Ensure caller has an active verified zone
-    const profRes = await client.query(
-      `SELECT zone_id, zone_verified_until FROM private.profiles WHERE id = $1::uuid AND status = 'active'`,
-      [params.userId]
-    );
-    const prof = profRes.rows[0];
-    if (!prof?.zone_id || !prof?.zone_verified_until || new Date(String(prof.zone_verified_until)).getTime() <= Date.now()) {
-      throw new Error('zone_not_verified');
+  let activeUserId: string | null = null;
+  let userZoneId: number | null = null;
+
+  if (params.userId) {
+    const checkClient = await pool.connect();
+    try {
+      const profRes = await checkClient.query(
+        `SELECT id, zone_id, zone_verified_until FROM private.profiles WHERE id = $1::uuid AND status = 'active'`,
+        [params.userId]
+      );
+      const prof = profRes.rows[0];
+      if (prof) {
+        if (!prof.zone_id || !prof.zone_verified_until || new Date(String(prof.zone_verified_until)).getTime() <= Date.now()) {
+          throw new Error('zone_not_verified');
+        }
+        activeUserId = String(prof.id);
+        userZoneId = Number(prof.zone_id);
+      }
+    } finally {
+      checkClient.release();
     }
+  }
 
+  const client = await pool.connect();
+  try {
     const zonesRes = await client.query(
       `SELECT id, name, max_accuracy_m, is_active FROM private.zones WHERE is_active = true ORDER BY id`
     );
@@ -244,12 +259,13 @@ export async function dbGetFeed(params: {
               (p.answered_reply_id IS NOT NULL) AS answered,
               p.answered_reply_id,
               p.created_at,
-              (p.author_id = $1::uuid) AS is_mine,
-              coalesce(v.value, 0)::smallint AS my_vote
+              ($1::uuid IS NOT NULL AND p.author_id = $1::uuid) AS is_mine,
+              COALESCE(v.value, 0)::smallint AS my_vote
        FROM private.posts p
        JOIN private.zones z ON z.id = p.zone_id AND z.is_active = true
        LEFT JOIN private.votes v
-         ON v.user_id = $1::uuid
+         ON $1::uuid IS NOT NULL
+        AND v.user_id = $1::uuid
         AND v.target_type = 'post'
         AND v.target_id = p.id
        WHERE p.status = 'published'
@@ -260,7 +276,7 @@ export async function dbGetFeed(params: {
        ORDER BY ${orderBy}
        LIMIT $6::integer`,
       [
-        params.userId,
+        activeUserId,
         params.channelId ?? null,
         params.kind ?? null,
         params.zoneId ?? null,
@@ -305,7 +321,9 @@ export async function dbGetFeed(params: {
     const activeZoneName =
       params.zoneId !== undefined
         ? zoneMap.get(params.zoneId) ?? 'UPSA Main Campus'
-        : zoneMap.get(Number(prof.zone_id)) ?? 'All UPSA Places';
+        : userZoneId !== null
+        ? zoneMap.get(userZoneId) ?? 'All UPSA Places'
+        : 'All UPSA Places';
 
     return {
       items,
@@ -314,7 +332,9 @@ export async function dbGetFeed(params: {
       zones,
       channels,
     };
-  });
+  } finally {
+    client.release();
+  }
 }
 
 export async function dbCreatePost(
