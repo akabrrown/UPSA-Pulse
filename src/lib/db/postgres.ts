@@ -95,9 +95,9 @@ export async function broadcastRealtimeEvent(
   if (!shouldUseLiveDb()) return;
   try {
     const supabase = createSupabaseServiceClient();
-    const channels = [`zone:${zoneId}`];
+    const channels = [`realtime-feed-zone:${zoneId}`];
     if (zoneId !== 'all') {
-      channels.push('zone:all');
+      channels.push('realtime-feed-zone:all');
     }
     for (const channelName of channels) {
       const channel = supabase.channel(channelName);

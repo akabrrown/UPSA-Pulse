@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -235,6 +235,10 @@ export function PulseApp() {
   const [legalUpdateModalOpen, setLegalUpdateModalOpen] = useState<boolean>(false);
   const [legalUpdateChecked, setLegalUpdateChecked] = useState<boolean>(false);
 
+  // Dedicated Background Feed Worker (FEED-WORKER-1)
+  const feedWorkerRef = useRef<Worker | null>(null);
+  const [liveSyncActive, setLiveSyncActive] = useState<boolean>(false);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const handleOnline = () => setIsOffline(false);
@@ -350,6 +354,95 @@ export function PulseApp() {
     }
   }, [loadFeed, loadMeAndAlerts]);
 
+  // Dedicated Background Feed Worker (FEED-WORKER-1)
+  // Keeps campus feeds fresh in real time without manual page refreshes
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof Worker === 'undefined') return;
+
+    let worker: Worker;
+    try {
+      worker = new Worker('/feed-worker.js');
+      feedWorkerRef.current = worker;
+      setLiveSyncActive(true);
+    } catch {
+      return;
+    }
+
+    worker.postMessage({
+      type: 'START',
+      payload: {
+        sort,
+        zoneId: selectedZoneId ?? null,
+        channelId: selectedChannelId ?? null,
+        asksOnly,
+      },
+    });
+
+    worker.onmessage = (e: MessageEvent) => {
+      const data = e.data;
+      if (data?.type === 'FEED_SYNC_SUCCESS' && Array.isArray(data.posts)) {
+        const incoming = data.posts as PublicPostView[];
+        if (incoming.length === 0) return;
+
+        const isNearTop = typeof window !== 'undefined' ? window.scrollY <= 120 : true;
+        if (isNearTop) {
+          setPosts((currentPosts) => {
+            if (
+              currentPosts.length === incoming.length &&
+              currentPosts.every(
+                (p, idx) =>
+                  p.id === incoming[idx]?.id &&
+                  p.score === incoming[idx]?.score &&
+                  p.replyCount === incoming[idx]?.replyCount
+              )
+            ) {
+              return currentPosts;
+            }
+            return incoming;
+          });
+          setNewPostsCount(0);
+        } else {
+          if (data.freshCount && data.freshCount > 0) {
+            setNewPostsCount(data.freshCount);
+          }
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        worker.postMessage({ type: 'SET_INTERVAL', payload: { intervalMs: 30000 } });
+      } else {
+        worker.postMessage({ type: 'SET_INTERVAL', payload: { intervalMs: 8000 } });
+        worker.postMessage({ type: 'FETCH_NOW' });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      worker.postMessage({ type: 'STOP' });
+      worker.terminate();
+      feedWorkerRef.current = null;
+      setLiveSyncActive(false);
+    };
+  }, []);
+
+  // Update worker config whenever feed filters change
+  useEffect(() => {
+    if (feedWorkerRef.current) {
+      feedWorkerRef.current.postMessage({
+        type: 'UPDATE_CONFIG',
+        payload: {
+          sort,
+          zoneId: selectedZoneId ?? null,
+          channelId: selectedChannelId ?? null,
+          asksOnly,
+        },
+      });
+    }
+  }, [sort, selectedZoneId, selectedChannelId, asksOnly]);
+
   // Supabase Realtime broadcast listener on place channels (TDD Section 7)
   useEffect(() => {
     let supabase: ReturnType<typeof createSupabaseBrowserClient> | null = null;
@@ -365,7 +458,13 @@ export function PulseApp() {
       .on('broadcast', { event: 'post_created' }, (msg: { payload?: { zoneId?: number } }) => {
         const postZoneId = msg?.payload?.zoneId;
         if (!selectedZoneId || selectedZoneId === postZoneId) {
-          setNewPostsCount((c) => c + 1);
+          const isNearTop = typeof window !== 'undefined' ? window.scrollY <= 120 : true;
+          if (isNearTop) {
+            void loadFeed();
+            feedWorkerRef.current?.postMessage({ type: 'FETCH_NOW' });
+          } else {
+            setNewPostsCount((c) => c + 1);
+          }
         }
       })
       .on(
@@ -2267,18 +2366,30 @@ export function PulseApp() {
                 })}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setAsksOnly(!asksOnly)}
-                aria-pressed={asksOnly}
-                className={`min-h-[36px] px-3 rounded-full text-[13px] font-semibold cursor-pointer ${
-                  asksOnly
-                    ? 'bg-[#D9A21B] text-[#0B2A5B]'
-                    : 'bg-[#1C4A8F] text-white hover:bg-[#1C4A8F]/80'
-                }`}
-              >
-                Asks Only
-              </button>
+              <div className="flex items-center gap-2">
+                {liveSyncActive && (
+                  <div
+                    title="Live background feed worker active"
+                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#133875] text-[#DCE6F5] text-[11px] font-semibold border border-[#2C599D]"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Live Updates</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setAsksOnly(!asksOnly)}
+                  aria-pressed={asksOnly}
+                  className={`min-h-[36px] px-3 rounded-full text-[13px] font-semibold cursor-pointer ${
+                    asksOnly
+                      ? 'bg-[#D9A21B] text-[#0B2A5B]'
+                      : 'bg-[#1C4A8F] text-white hover:bg-[#1C4A8F]/80'
+                  }`}
+                >
+                  Asks Only
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -2368,11 +2479,17 @@ export function PulseApp() {
           <div className="flex justify-center">
             <button
               type="button"
-              onClick={() => void loadFeed()}
-              className="new-posts-pill min-h-[44px] px-4 py-2 rounded-full bg-[#D9A21B] text-[#0B2A5B] font-bold text-[14px] inline-flex items-center gap-2 border border-[#0B2A5B] cursor-pointer"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+                void loadFeed();
+                feedWorkerRef.current?.postMessage({ type: 'FETCH_NOW' });
+              }}
+              className="new-posts-pill min-h-[44px] px-4 py-2 rounded-full bg-[#D9A21B] text-[#0B2A5B] font-bold text-[14px] inline-flex items-center gap-2 border border-[#0B2A5B] cursor-pointer shadow-md hover:bg-[#e6b12c] transition-all"
             >
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
-              <span>New posts ({newPostsCount}) — Tap to load</span>
+              <span>New posts ({newPostsCount}) — Tap to view</span>
             </button>
           </div>
         )}
