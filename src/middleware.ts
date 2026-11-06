@@ -5,6 +5,15 @@ const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname.startsWith('/admin')) {
+    const sessionCookie = request.cookies.get('pulse_uid')?.value;
+    if (!sessionCookie) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = '/';
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
   if (pathname.startsWith('/api/') && MUTATING_METHODS.has(request.method)) {
     const origin = request.headers.get('origin');
     const host = request.headers.get('host');

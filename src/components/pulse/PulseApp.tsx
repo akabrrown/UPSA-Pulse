@@ -2175,14 +2175,16 @@ export function PulseApp() {
                         </button>
                       )}
 
-                      <Link
-                        href="/admin"
-                        onClick={() => setOverflowOpen(false)}
-                        className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[14px] font-semibold text-[#1C4A8F] hover:bg-[var(--surface-subtle)]"
-                      >
-                        <ShieldAlert className="w-4 h-4 text-[#1C4A8F] shrink-0" />
-                        <span>Admin &amp; Moderation Console</span>
-                      </Link>
+                      {profileSummary && (profileSummary.isAdmin || profileSummary.canModerate) && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setOverflowOpen(false)}
+                          className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[14px] font-semibold text-[#1C4A8F] hover:bg-[var(--surface-subtle)]"
+                        >
+                          <ShieldAlert className="w-4 h-4 text-[#1C4A8F] shrink-0" />
+                          <span>Admin &amp; Moderation Console</span>
+                        </Link>
+                      )}
                     </div>
                   </div>
                 )}
@@ -3506,12 +3508,14 @@ export function PulseApp() {
                 >
                   Your Data &amp; Deletion Help
                 </Link>
-                <Link
-                  href="/admin"
-                  className="min-h-[44px] px-3 rounded-[8px] bg-[#DCE6F5] flex items-center text-[#0B2A5B] hover:underline"
-                >
-                  Moderator &amp; Admin Console
-                </Link>
+                {profileSummary && (profileSummary.isAdmin || profileSummary.canModerate) && (
+                  <Link
+                    href="/admin"
+                    className="min-h-[44px] px-3 rounded-[8px] bg-[#DCE6F5] flex items-center text-[#0B2A5B] hover:underline"
+                  >
+                    Moderator &amp; Admin Console
+                  </Link>
+                )}
               </div>
             </div>
 

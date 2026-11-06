@@ -37,3 +37,4 @@ begin
   do update set last_seen_at = now();
   return 'pending';
 end $$;
+

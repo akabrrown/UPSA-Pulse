@@ -56,11 +56,14 @@ interface AdminConfigSummary {
   }>;
 }
 
-const MODERATOR_A_ID = '44444444-4444-4444-8444-444444444444';
-const MODERATOR_B_ID = '55555555-5555-4555-8555-555555555555';
-
 export default function AdminQueuePage() {
-  const [activeActorId, setActiveActorId] = useState<string>(MODERATOR_A_ID);
+  const [currentUser, setCurrentUser] = useState<{
+    id?: string;
+    username?: string | null;
+    isAdmin: boolean;
+    canModerate: boolean;
+  } | null>(null);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [reasonMap, setReasonMap] = useState<Record<string, string>>({});
@@ -105,16 +108,33 @@ export default function AdminQueuePage() {
   const [unmaskApproveId, setUnmaskApproveId] = useState<string>('');
   const [unmaskOutcome, setUnmaskOutcome] = useState<string | null>(null);
 
+  useEffect(() => {
+    async function verifyAdminAuth() {
+      try {
+        const res = await fetch('/api/me');
+        const json = await res.json();
+        if (res.ok && json.success && json.data.profile) {
+          if (json.data.profile.isAdmin || json.data.profile.canModerate) {
+            setCurrentUser(json.data.profile);
+            setAuthChecked(true);
+            return;
+          }
+        }
+      } catch {
+        // auth failed
+      }
+      setCurrentUser(null);
+      setAuthChecked(true);
+    }
+    void verifyAdminAuth();
+  }, []);
+
   const loadQueueAndConfig = useCallback(async () => {
     setLoading(true);
     try {
       const [qRes, cRes] = await Promise.all([
-        fetch('/api/admin/queue', {
-          headers: { 'x-pulse-user-id': activeActorId },
-        }),
-        fetch('/api/admin/config', {
-          headers: { 'x-pulse-user-id': MODERATOR_A_ID },
-        }),
+        fetch('/api/admin/queue'),
+        fetch('/api/admin/config'),
       ]);
       const qJson = await qRes.json();
       const cJson = await cRes.json();
@@ -130,11 +150,13 @@ export default function AdminQueuePage() {
     } finally {
       setLoading(false);
     }
-  }, [activeActorId]);
+  }, []);
 
   useEffect(() => {
-    void loadQueueAndConfig();
-  }, [loadQueueAndConfig]);
+    if (authChecked && currentUser && (currentUser.isAdmin || currentUser.canModerate)) {
+      void loadQueueAndConfig();
+    }
+  }, [authChecked, currentUser, loadQueueAndConfig]);
 
   const handleAction = async (
     item: QueueItem,
@@ -150,7 +172,6 @@ export default function AdminQueuePage() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': activeActorId,
       },
       body: JSON.stringify({
         targetType: item.targetType,
@@ -176,7 +197,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'keyword_rule',
@@ -201,7 +221,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'allowed_domain',
@@ -220,7 +239,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'zone',
@@ -238,7 +256,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'zone',
@@ -258,7 +275,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'zone',
@@ -288,7 +304,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'channel',
@@ -308,7 +323,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'channel',
@@ -342,7 +356,6 @@ export default function AdminQueuePage() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': MODERATOR_A_ID,
       },
       body: JSON.stringify({
         section: 'channel',
@@ -361,10 +374,7 @@ export default function AdminQueuePage() {
   const handleCaseLookup = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await fetch(
-      `/api/admin/lookup?postId=${encodeURIComponent(lookupPostId.trim())}&aliasNo=${lookupAliasNo}`,
-      {
-        headers: { 'x-pulse-user-id': activeActorId },
-      }
+      `/api/admin/lookup?postId=${encodeURIComponent(lookupPostId.trim())}&aliasNo=${lookupAliasNo}`
     );
     const json = await res.json();
     if (res.ok && json.success) {
@@ -384,7 +394,6 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': activeActorId,
       },
       body: JSON.stringify({
         appealId,
@@ -409,7 +418,6 @@ export default function AdminQueuePage() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': activeActorId,
       },
       body: JSON.stringify({
         action: 'request',
@@ -435,7 +443,6 @@ export default function AdminQueuePage() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-pulse-user-id': activeActorId,
       },
       body: JSON.stringify({
         action: 'approve',
@@ -468,17 +475,12 @@ export default function AdminQueuePage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <label className="text-[12px] text-[#DCE6F5] flex items-center gap-1.5">
-              <span>Active Holder:</span>
-              <select
-                value={activeActorId}
-                onChange={(e) => setActiveActorId(e.target.value)}
-                className="min-h-[36px] px-2 rounded-[6px] bg-[#133875] text-white border border-[#2C599D] text-[12px] font-semibold"
-              >
-                <option value={MODERATOR_A_ID}>Holder A (Admin + Mod)</option>
-                <option value={MODERATOR_B_ID}>Holder B (Second Reviewer)</option>
-              </select>
-            </label>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-[#133875] text-[#DCE6F5] text-[12px] font-semibold border border-[#2C599D]">
+              <Shield className="w-3.5 h-3.5 text-[#D9A21B]" aria-hidden="true" />
+              <span>
+                @{currentUser?.username ?? 'staff'} ({currentUser?.isAdmin ? 'Administrator' : 'Moderator'})
+              </span>
+            </div>
             <Link
               href="/"
               className="min-h-[44px] px-3 inline-flex items-center font-semibold text-[14px] text-[#D9A21B] hover:underline"
