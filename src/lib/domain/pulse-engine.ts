@@ -654,9 +654,24 @@ export function detectRealPersonNames(text: string): string[] {
     if (parts.length === 1) {
       const lower = trimmed.toLowerCase();
       if (COMMON_DICTIONARY_WORDS.has(lower)) continue;
-      if (!/^[A-Z][a-z]+$/.test(trimmed)) continue;
+      const isKnownGhanaianName =
+        GHANAIAN_FIRST_NAMES.includes(lower) || GHANAIAN_LAST_NAMES.includes(lower);
+      if (!isKnownGhanaianName && !/^[A-Z][a-zA-Z'-]+$/.test(trimmed)) continue;
     }
     validNames.push(trimmed);
+  }
+
+  // Regex check for known Ghanaian first names (e.g., "Ama", "Kofi", "Akosua", "Kwabena")
+  const ghanaianFirstNameRegex = new RegExp(
+    `\\b(${GHANAIAN_FIRST_NAMES.join('|')})\\b`,
+    'gi'
+  );
+  let fnMatch: RegExpExecArray | null;
+  while ((fnMatch = ghanaianFirstNameRegex.exec(clean)) !== null) {
+    const matchedStr = fnMatch[0].trim();
+    if (!validNames.some((n) => n.toLowerCase() === matchedStr.toLowerCase())) {
+      validNames.push(matchedStr);
+    }
   }
 
   // Regex check for honorific + name patterns (e.g., "Dr. Osei", "Prof. Boateng", "Mr. Mensah", "Miss Akosua")
@@ -684,6 +699,60 @@ export function detectRealPersonNames(text: string): string[] {
   }
 
   return filteredNames;
+}
+
+/**
+ * Redacts/masks a person's name into the format A**** (first letter capitalized, followed by asterisks).
+ * Example: 'Ama' -> 'A****', 'Kofi' -> 'K****', 'Mensah' -> 'M*****'.
+ * Multi-word names: 'Kofi Mensah' -> 'K**** M*****'.
+ * Preserves honorifics: 'Dr. Osei' -> 'Dr. O****'.
+ */
+export function maskPersonName(name: string): string {
+  if (!name || typeof name !== 'string') return '';
+  const parts = name.trim().split(/\s+/);
+  return parts
+    .map((part) => {
+      // Preserve honorifics/titles
+      if (
+        /^(dr\.?|prof\.?|professor|mr\.?|mrs\.?|ms\.?|miss|rev\.?|reverend|pastor|hon\.?|lecturer|dean|hod)$/i.test(
+          part
+        )
+      ) {
+        return part;
+      }
+      const match = /^([a-zA-ZÀ-ÿ'-]+)([^a-zA-ZÀ-ÿ'-]*)$/.exec(part);
+      if (!match) return part;
+      const [, word, punct] = match;
+      if (!word || word.length === 0) return part;
+      const firstLetter = word[0]!.toUpperCase();
+      const starsCount = Math.max(word.length - 1, 4);
+      return `${firstLetter}${'*'.repeat(starsCount)}${punct ?? ''}`;
+    })
+    .join(' ');
+}
+
+/**
+ * Detects all real human names in the input text and redacts/masks them into A**** format.
+ * Prevents doxxing and harassment while preserving readability.
+ * Example: "Confession: I have feelings for Ama" -> "Confession: I have feelings for A****"
+ */
+export function maskRealPersonNames(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  const names = detectRealPersonNames(text);
+  if (names.length === 0) return text;
+
+  // Sort longest names first to prevent partial word replacements
+  const sortedNames = [...new Set(names)].sort((a, b) => b.length - a.length);
+  let masked = text;
+
+  for (const name of sortedNames) {
+    const replacement = maskPersonName(name);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    masked = masked.replace(regex, replacement);
+  }
+
+  return masked;
 }
 
 const CONFESSION_HARASSMENT_CONTEXT_REGEX =

@@ -70,4 +70,12 @@ describe('PWA Icons, Splash Screens, Logos & Manifest Verification', () => {
     expect(fs.existsSync(path.join(publicDir, 'images/upsa-pulse-emblem.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(publicDir, 'images/upsa-pulse-campus-hero.jpg'))).toBe(true);
   });
+
+  it('verifies service worker exists with cache v5 and network-first navigation caching', () => {
+    const swPath = path.join(publicDir, 'sw.js');
+    expect(fs.existsSync(swPath)).toBe(true);
+    const swContent = fs.readFileSync(swPath, 'utf8');
+    expect(swContent).toContain("const CACHE_NAME = 'upsa-pulse-shell-v5';");
+    expect(swContent).toContain('cache.put(event.request, responseClone)');
+  });
 });

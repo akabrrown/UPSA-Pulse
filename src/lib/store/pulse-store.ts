@@ -9,6 +9,7 @@ import {
   hashPassword,
   isAllowedEmailDomain,
   type KeywordRuleConfig,
+  maskRealPersonNames,
   normalizeUpsaIndexNumber,
   parseGeoJsonPolygonRing,
   screenContentText,
@@ -780,7 +781,8 @@ export function createPostInStore(
       : profile.zoneId!;
 
   const trimmed = input.body.trim();
-  const screen = screenContentText(trimmed, state.keywordRules);
+  const maskedBody = maskRealPersonNames(trimmed);
+  const screen = screenContentText(maskedBody, state.keywordRules);
   const now = new Date();
   const id = crypto.randomUUID();
 
@@ -790,7 +792,7 @@ export function createPostInStore(
     channelId: channel.id,
     authorId: userId,
     kind: input.kind,
-    body: trimmed,
+    body: maskedBody,
     status: screen.status,
     upvotes: 0,
     downvotes: 0,
@@ -884,7 +886,8 @@ export function createReplyInStore(
   }
 
   const trimmed = body.trim();
-  const screen = screenContentText(trimmed, state.keywordRules);
+  const maskedBody = maskRealPersonNames(trimmed);
+  const screen = screenContentText(maskedBody, state.keywordRules);
   const nowIso = new Date().toISOString();
   const id = crypto.randomUUID();
 
@@ -893,7 +896,7 @@ export function createReplyInStore(
     postId,
     authorId: userId,
     aliasNo,
-    body: trimmed,
+    body: maskedBody,
     status: screen.status,
     upvotes: 0,
     downvotes: 0,
@@ -918,7 +921,7 @@ export function createReplyInStore(
           post_id: postId,
           reply_id: id,
           alias_no: aliasNo,
-          snippet: trimmed.slice(0, 80),
+          snippet: maskedBody.slice(0, 80),
         },
         readAt: null,
         createdAt: nowIso,

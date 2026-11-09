@@ -4,6 +4,7 @@ import {
   generateRandomStudentUsername,
   hashDeviceToken,
   hashPassword,
+  maskRealPersonNames,
   normalizeUpsaIndexNumber,
   parseGeoJsonPolygonRing,
   verifyPassword,
@@ -377,23 +378,26 @@ export async function dbCreatePost(
   userId: string,
   input: { zoneId?: number; channelId: number; kind: PostKind; body: string }
 ): Promise<PublicPostView & { showSupportCard: boolean }> {
+  const maskedBody = maskRealPersonNames(input.body.trim());
+  const effectiveInput = { ...input, body: maskedBody };
+
   if (!shouldUseLiveDb()) {
-    return createPostInStore(userId, input);
+    return createPostInStore(userId, effectiveInput);
   }
   return withAuthenticatedUser(userId, async (client) => {
     const res = await client.query(
       `SELECT * FROM feed.create_post($1::smallint, $2::private.post_kind, $3::text)`,
-      [input.channelId, input.kind, input.body]
+      [effectiveInput.channelId, effectiveInput.kind, effectiveInput.body]
     );
     const row = res.rows[0];
     let targetZoneId = 1;
     let targetZoneName = 'UPSA Main Campus';
-    if (input.zoneId !== undefined) {
+    if (effectiveInput.zoneId !== undefined) {
       await client.query(
         `UPDATE private.posts SET zone_id = $1::smallint WHERE id = $2::uuid`,
-        [input.zoneId, row.post_id]
+        [effectiveInput.zoneId, row.post_id]
       );
-      targetZoneId = input.zoneId;
+      targetZoneId = effectiveInput.zoneId;
     } else {
       const zRes = await client.query(`SELECT zone_id FROM private.posts WHERE id = $1::uuid`, [row.post_id]);
       targetZoneId = Number(zRes.rows[0]?.zone_id ?? 1);
@@ -406,9 +410,9 @@ export async function dbCreatePost(
       id: String(row.post_id),
       zoneId: targetZoneId,
       zoneName: targetZoneName,
-      channelId: input.channelId,
-      kind: input.kind,
-      body: input.body.trim(),
+      channelId: effectiveInput.channelId,
+      kind: effectiveInput.kind,
+      body: maskedBody,
       status: row.post_status as ContentStatus,
       score: 0,
       hotScore: 1,
@@ -536,20 +540,22 @@ export async function dbCreateReply(
   postId: string,
   body: string
 ): Promise<PublicReplyView & { status: ContentStatus; showSupportCard: boolean }> {
+  const maskedBody = maskRealPersonNames(body.trim());
+
   if (!shouldUseLiveDb()) {
-    return createReplyInStore(userId, postId, body);
+    return createReplyInStore(userId, postId, maskedBody);
   }
   return withAuthenticatedUser(userId, async (client) => {
     const res = await client.query(`SELECT * FROM feed.create_reply($1::uuid, $2::text)`, [
       postId,
-      body,
+      maskedBody,
     ]);
     const row = res.rows[0];
     const createdReply = {
       id: String(row.reply_id),
       postId,
       aliasNo: Number(row.reply_alias),
-      body: body.trim(),
+      body: maskedBody,
       score: 0,
       createdAt: new Date().toISOString(),
       isMine: true,

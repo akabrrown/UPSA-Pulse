@@ -3,6 +3,8 @@ import {
   computeHotScore,
   screenContentText,
   detectRealPersonNames,
+  maskPersonName,
+  maskRealPersonNames,
   verifyZonePoint,
   hashDeviceToken,
   isAllowedEmailDomain,
@@ -141,6 +143,38 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
       expect(detectRealPersonNames('I have faith that we will pass the mid-sem exams')).toEqual([]);
       expect(detectRealPersonNames('I feel so much joy after finishing my assignment')).toEqual([]);
       expect(detectRealPersonNames('Which hostel has the best water supply?')).toEqual([]);
+    });
+
+    it('masks and hashes detected human names into A**** format to prevent harassment', () => {
+      // Individual name masking
+      expect(maskPersonName('Ama')).toBe('A****');
+      expect(maskPersonName('Kofi')).toBe('K****');
+      expect(maskPersonName('Mensah')).toBe('M*****');
+      expect(maskPersonName('Kofi Mensah')).toBe('K**** M*****');
+      expect(maskPersonName('Dr. Osei')).toBe('Dr. O****');
+      expect(maskPersonName('Prof. Boateng')).toBe('Prof. B******');
+
+      // Full sentences with name masking
+      expect(maskRealPersonNames('Ama is my best friend')).toBe('A**** is my best friend');
+      expect(maskRealPersonNames('I love Kofi Mensah from Level 200')).toBe(
+        'I love K**** M***** from Level 200'
+      );
+      expect(maskRealPersonNames('I talked to Dr. Osei yesterday')).toBe(
+        'I talked to Dr. O**** yesterday'
+      );
+
+      // Campus facility names named after people are preserved
+      expect(maskRealPersonNames('The lecture is at Joshua Alabi block')).toBe(
+        'The lecture is at Joshua Alabi block'
+      );
+      expect(maskRealPersonNames('We met near Ampomah building')).toBe(
+        'We met near Ampomah building'
+      );
+
+      // General text without names is unchanged
+      expect(maskRealPersonNames('I have faith we will pass the accounting exam')).toBe(
+        'I have faith we will pass the accounting exam'
+      );
     });
   });
 

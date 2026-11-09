@@ -1,4 +1,4 @@
-const CACHE_NAME = 'upsa-pulse-shell-v4';
+const CACHE_NAME = 'upsa-pulse-shell-v5';
 const OFFLINE_ASSETS = [
   '/',
   '/manifest.json',
@@ -45,11 +45,21 @@ self.addEventListener('fetch', (event) => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(async () => {
-        const cached = await caches.match(event.request);
-        if (cached) return cached;
-        return caches.match('/');
-      })
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          return caches.match('/');
+        })
     );
   }
 });
