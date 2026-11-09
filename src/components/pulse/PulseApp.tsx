@@ -25,7 +25,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Smile,
-  Sparkles,
   Sun,
   Trash2,
   User,
@@ -1600,7 +1599,7 @@ export function PulseApp() {
               {/* Automatic Unique Pseudonymous Username */}
               <div className="p-3.5 rounded-[8px] bg-[#EBF3FC] dark:bg-[#0B2A5B]/30 border border-[#1C4A8F]/30 space-y-1">
                 <div className="flex items-center gap-2 text-[#0B2A5B] dark:text-[#93B4E8] font-semibold text-[13px]">
-                  <Sparkles className="w-4 h-4 text-[#D9A21B]" />
+                  <User className="w-4 h-4 text-[#D9A21B]" />
                   <span>Unique Anonymous Username</span>
                 </div>
                 <p className="text-[12px] leading-[17px] text-[var(--text-secondary)]">
