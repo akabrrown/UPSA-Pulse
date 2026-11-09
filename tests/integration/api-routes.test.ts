@@ -33,6 +33,27 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
     expect(() => getFeedFromStore({ userId: studentAmberUnverified(), sort: 'hot' })).toThrow('zone_not_verified');
   });
 
+  it('allows a student located in Hostel A to post to UPSA Main Campus without having to be at Main Campus', () => {
+    // User is located at Hostel A & B coordinates (Zone 2)
+    const verification = verifyUserZoneInStore(studentEfua, { lat: 5.6597, lng: -0.172, accuracy: 25 });
+    expect(verification.zoneId).toBe(2);
+    expect(verification.zoneName).toContain('Hostel A');
+
+    // Post with target zoneId: 1 (UPSA Main Campus)
+    const post = createPostInStore(studentEfua, {
+      zoneId: 1,
+      channelId: 6,
+      kind: 'post',
+      body: 'Campus concert happening now at the main auditorium!',
+    });
+    expect(post.zoneId).toBe(1);
+    expect(post.zoneName).toBe('UPSA Main Campus');
+
+    // Verify it appears in the Main Campus feed
+    const campusFeed = getFeedFromStore({ userId: studentEfua, sort: 'new', zoneId: 1 });
+    expect(campusFeed.items.some((p) => p.id === post.id)).toBe(true);
+  });
+
   it('allocates sequential per-thread aliases (OP=0, Student 1, Student 2) and reuses alias when same user replies twice', () => {
     verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
     verifyUserZoneInStore(studentKojo, { lat: 5.6605, lng: -0.1662, accuracy: 30 });

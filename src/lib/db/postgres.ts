@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { createSupabaseServiceClient } from '@/lib/supabase/server';
 import {
+  generateRandomStudentUsername,
   hashDeviceToken,
   hashPassword,
   normalizeUpsaIndexNumber,
@@ -1239,7 +1240,7 @@ export async function dbApprovePendingDevice(input: {
 }
 
 export async function dbSignUpStudent(input: {
-  username: string;
+  username?: string;
   indexNumber: string;
   password: string;
   email?: string;
@@ -1250,7 +1251,7 @@ export async function dbSignUpStudent(input: {
     return signUpStudentInStore(input);
   }
 
-  const cleanUsername = input.username.trim().toLowerCase();
+  let cleanUsername = input.username?.trim().toLowerCase();
   const cleanIndex = normalizeUpsaIndexNumber(input.indexNumber);
   const cleanEmail = (
     input.email?.trim() || `${cleanIndex.replace(/[^A-Z0-9]/gi, '').toLowerCase()}@st.upsa.edu.gh`
@@ -1261,6 +1262,24 @@ export async function dbSignUpStudent(input: {
   const client = await getPgPool().connect();
   try {
     await client.query('BEGIN');
+
+    if (!cleanUsername) {
+      let attempts = 0;
+      let candidate = generateRandomStudentUsername().toLowerCase();
+      while (attempts < 15) {
+        const check = await client.query(
+          `SELECT 1 FROM private.profiles WHERE lower(username) = lower($1::text) LIMIT 1`,
+          [candidate]
+        );
+        if (check.rows.length === 0) {
+          cleanUsername = candidate;
+          break;
+        }
+        candidate = generateRandomStudentUsername().toLowerCase();
+        attempts++;
+      }
+      if (!cleanUsername) cleanUsername = candidate;
+    }
 
     const dupRes = await client.query(
       `SELECT id, lower(username) AS existing_username, upper(index_number) AS existing_index

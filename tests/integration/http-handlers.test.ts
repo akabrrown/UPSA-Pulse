@@ -601,6 +601,26 @@ describe('HTTP Route Handlers End-to-End Verification (TDD Section 6)', () => {
     expect(signupJson.data.indexVerified).toBe(true);
     expect(signupJson.data.deviceStatus).toBe('trusted');
 
+    // 2b. Valid signup WITHOUT username automatically generates and assigns a unique random username
+    const autoUsernameSignupRes = await postAuthOtp(
+      makeReq('http://localhost:3000/api/auth/otp', {
+        method: 'POST',
+        body: {
+          step: 'signup',
+          indexNumber: '10284913',
+          password: 'UpsaPulse#2026',
+          adultConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+          guidelinesAccepted: true,
+        },
+      })
+    );
+    expect(autoUsernameSignupRes.status).toBe(201);
+    const autoJson = await autoUsernameSignupRes.json();
+    expect(autoJson.data.username).toMatch(/^[A-Za-z0-9_]{3,24}$/);
+    expect(autoJson.data.indexNumber).toBe('10284913');
+
     // 3. Reject duplicate indexNumber or username
     const dupRes = await postAuthOtp(
       makeReq('http://localhost:3000/api/auth/otp', {

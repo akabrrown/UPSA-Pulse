@@ -58,7 +58,8 @@ export const studentSignUpSchema = z.object({
     .trim()
     .min(3, 'Username must be at least 3 characters')
     .max(24, 'Username cannot exceed 24 characters')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only use letters, numbers, and underscores'),
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only use letters, numbers, and underscores')
+    .optional(),
   indexNumber: z
     .string()
     .trim()

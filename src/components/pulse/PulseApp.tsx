@@ -26,6 +26,7 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Sun,
   Trash2,
   User,
@@ -973,22 +974,9 @@ export function PulseApp() {
     setAuthError(null);
     setUsernameTakenError(null);
 
-    const user = signupUsername.trim();
     const idx = signupIndexNumber.trim();
     const pwd = signupPassword;
 
-    if (user.length < 3) {
-      setAuthError('Username must be at least 3 characters.');
-      return;
-    }
-    if (user.length > 24) {
-      setAuthError('Username cannot exceed 24 characters.');
-      return;
-    }
-    if (!/^[a-zA-Z0-9_]+$/.test(user)) {
-      setAuthError('Username can only use letters, numbers, and underscores.');
-      return;
-    }
     if (idx.length < 6) {
       setAuthError('Enter your valid UPSA student index number.');
       return;
@@ -1009,7 +997,6 @@ export function PulseApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           step: 'signup',
-          username: user,
           indexNumber: idx,
           password: pwd,
           email: signupEmail.trim() || undefined,
@@ -1029,15 +1016,12 @@ export function PulseApp() {
           setPendingDeviceModalOpen(true);
         }
         setComposeStatusToast(
-          `Welcome @${json.data.username} (Index ${json.data.indexNumber})! Your identity remains private.`
+          `Welcome @${json.data.username} (Index ${json.data.indexNumber})! Your pseudonymous username has been assigned.`
         );
         setOnboardingStage('location_explainer');
         void loadMeAndAlerts();
       } else {
-        if (json.error?.code === 'username_already_taken') {
-          setUsernameTakenError('This username is already taken. Please choose another username.');
-        }
-        setAuthError(json.error?.message ?? 'Check your username, UPSA index number, password, and consents.');
+        setAuthError(json.error?.message ?? 'Check your UPSA index number, password, and consents.');
       }
     } finally {
       setAuthSubmitting(false);
@@ -1456,7 +1440,6 @@ export function PulseApp() {
 
   if (onboardingStage === 'signup') {
     const allConsented =
-      signupUsername.trim().length >= 3 &&
       signupIndexNumber.trim().length >= 6 &&
       signupPassword.length >= 8 &&
       adultConfirmed &&
@@ -1628,52 +1611,15 @@ export function PulseApp() {
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="signup-username"
-                    className="block text-[13px] font-semibold text-[var(--text-heading)]"
-                  >
-                    Secret username
-                  </label>
-                  <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium">
-                    <Lock className="w-3 h-3" />
-                    Private to your device
-                  </span>
+              {/* Automatic Unique Pseudonymous Username */}
+              <div className="p-3.5 rounded-[8px] bg-[#EBF3FC] dark:bg-[#0B2A5B]/30 border border-[#1C4A8F]/30 space-y-1">
+                <div className="flex items-center gap-2 text-[#0B2A5B] dark:text-[#93B4E8] font-semibold text-[13px]">
+                  <Sparkles className="w-4 h-4 text-[#D9A21B]" />
+                  <span>Unique Anonymous Username</span>
                 </div>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] font-mono text-[14px]">
-                    @
-                  </span>
-                  <input
-                    id="signup-username"
-                    type="text"
-                    required
-                    minLength={3}
-                    maxLength={24}
-                    placeholder="kwame_upsa"
-                    value={signupUsername}
-                    onBlur={() => void handleCheckUsernameAvailability()}
-                    onChange={(e) => {
-                      setSignupUsername(e.target.value);
-                      setUsernameTakenError(null);
-                    }}
-                    className={`w-full min-h-[44px] pl-8 pr-3.5 rounded-[8px] border bg-[var(--surface-app)] text-[15px] focus:outline-none focus:ring-2 ${
-                      usernameTakenError
-                        ? 'border-rose-500 focus:ring-rose-500'
-                        : 'border-[var(--border-color)] focus:ring-[#0B2A5B]'
-                    }`}
-                  />
-                </div>
-                {usernameTakenError ? (
-                  <p className="text-[12px] font-medium text-rose-600 dark:text-rose-400">
-                    {usernameTakenError}
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-[var(--text-secondary)]">
-                    Each student must have a unique username. It is only used to log into your account; public posts only display pseudonyms.
-                  </p>
-                )}
+                <p className="text-[12px] leading-[17px] text-[var(--text-secondary)]">
+                  To protect your privacy, you don&apos;t create a username. A unique random pseudonymous username (e.g. @NobleHawk_8241) is generated for you automatically upon registration.
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -3927,9 +3873,17 @@ export function PulseApp() {
             <form onSubmit={handleCreatePost} className="space-y-4">
               {/* Place / Zone selector chips */}
               <div>
-                <span className="block text-[13px] font-semibold text-[var(--text-secondary)] mb-2">
-                  Choose a place (Campus or Hostel feed)
-                </span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="block text-[13px] font-semibold text-[var(--text-secondary)]">
+                    Choose place to post to
+                  </span>
+                  <span className="text-[11px] text-[#1F7A4D] font-semibold">
+                    Post anywhere from campus
+                  </span>
+                </div>
+                <p className="text-[12px] text-[var(--text-secondary)] mb-2">
+                  At Hostel A, B, C or Campus? You can publish to any campus place without needing to travel there.
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {zones.map((z) => {
                     const selected = composeZoneId === z.id;

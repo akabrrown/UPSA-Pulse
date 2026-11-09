@@ -4,6 +4,7 @@ import {
   DEFAULT_ALLOWED_DOMAINS,
   DEFAULT_KEYWORD_RULES,
   DEFAULT_UPSA_ZONES,
+  generateRandomStudentUsername,
   hashDeviceToken,
   hashPassword,
   isAllowedEmailDomain,
@@ -1991,7 +1992,7 @@ export function isUsernameTakenInStore(rawUsername: string): boolean {
 }
 
 export function signUpStudentInStore(input: {
-  username: string;
+  username?: string;
   indexNumber: string;
   password: string;
   email?: string;
@@ -2006,7 +2007,19 @@ export function signUpStudentInStore(input: {
   indexVerified: boolean;
   deviceStatus: 'trusted' | 'pending';
 } {
-  const cleanUsername = input.username.trim().toLowerCase();
+  let cleanUsername = input.username?.trim().toLowerCase();
+  if (!cleanUsername) {
+    let attempts = 0;
+    do {
+      cleanUsername = generateRandomStudentUsername().toLowerCase();
+      attempts++;
+    } while (
+      Array.from(state.profiles.values()).some(
+        (p) => p.username && p.username.toLowerCase() === cleanUsername
+      ) && attempts < 15
+    );
+  }
+
   const cleanIndex = normalizeUpsaIndexNumber(input.indexNumber);
   const cleanEmail = (
     input.email?.trim() || `${cleanIndex.replace(/[^A-Z0-9]/gi, '').toLowerCase()}@st.upsa.edu.gh`

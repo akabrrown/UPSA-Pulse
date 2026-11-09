@@ -8,7 +8,11 @@ import {
   studentLoginSchema,
   studentSignUpSchema,
 } from '@/lib/validation/schemas';
-import { isAllowedEmailDomain, verifyStudentIndexWithApiKey } from '@/lib/domain/pulse-engine';
+import {
+  generateRandomStudentUsername,
+  isAllowedEmailDomain,
+  verifyStudentIndexWithApiKey,
+} from '@/lib/domain/pulse-engine';
 import { registerSignUpAndDeviceInStore } from '@/lib/store/pulse-store';
 import {
   dbCheckUsernameTaken,
@@ -107,7 +111,7 @@ export async function POST(req: NextRequest) {
       }
 
       const created = await dbSignUpStudent({
-        username: parsed.data.username,
+        username: parsed.data.username?.trim() || generateRandomStudentUsername(),
         indexNumber: indexCheck.normalizedIndex,
         password: parsed.data.password,
         email: parsed.data.email || undefined,

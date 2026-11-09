@@ -650,6 +650,29 @@ export function generateThreadGlyph(postId: string, aliasNo: number): ThreadGlyp
   };
 }
 
+const ADJECTIVES = [
+  'Wise', 'Swift', 'Calm', 'Noble', 'Bright', 'Clever', 'Keen', 'Brave',
+  'Kind', 'Grand', 'Amber', 'Silver', 'Golden', 'Star', 'Cedar', 'Bold',
+  'Quick', 'True', 'Royal', 'Pure', 'Prime', 'Solar', 'Lunar', 'Echo'
+];
+
+const NOUNS = [
+  'Scholar', 'Falcon', 'Hawk', 'Pioneer', 'Fellow', 'Leader', 'Writer',
+  'Thinker', 'Mentor', 'Voyager', 'Spark', 'Phoenix', 'Otter', 'Knight',
+  'Sage', 'Cadet', 'Explorer', 'Archer', 'Orator', 'Builder', 'Scout'
+];
+
+/**
+ * Generates an anonymous, pseudonymous random student username upon registration.
+ * Examples: BrightScholar_4821, NobleHawk_8301, WiseFalcon_1942.
+ */
+export function generateRandomStudentUsername(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)] ?? 'Noble';
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)] ?? 'Scholar';
+  const num = Math.floor(1000 + Math.random() * 9000);
+  return `${adj}${noun}_${num}`;
+}
+
 /**
  * TDD Section 9:
  * Scrub coordinates, emails, device tokens, and message text before sending any error to Sentry or logs.
