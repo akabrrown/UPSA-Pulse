@@ -1,14 +1,6 @@
 import type { Metadata, Viewport } from 'next';
-import { Figtree } from 'next/font/google';
 import { Providers } from '@/components/pulse/Providers';
 import './globals.css';
-
-const figtree = Figtree({
-  subsets: ['latin'],
-  variable: '--font-figtree',
-  display: 'swap',
-  weight: ['400', '600', '700'],
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://upsapulse.org'),
@@ -69,7 +61,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={figtree.variable}>
+    <html lang="en">
       <body>
         <Providers>{children}</Providers>
       </body>

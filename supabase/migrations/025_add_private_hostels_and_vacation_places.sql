@@ -109,3 +109,4 @@ end $$;
 
 revoke all on function private.verify_user_zone(uuid, double precision, double precision, double precision)
   from public, anon, authenticated;
+
