@@ -463,20 +463,73 @@ export async function verifyStudentIndexWithApiKey(
 }
 
 /**
- * Multi-round salted HMAC-SHA256 password hashing (zero native binary dependencies).
+ * Multi-round salted HMAC-SHA256 password hashing with CSPRNG salt (zero native binary dependencies).
  */
 export function hashPassword(password: string, pepper: string, salt?: string): string {
-  const effectiveSalt =
-    salt ??
-    bytesToHex(sha256Bytes(new TextEncoder().encode(`${Date.now()}:${Math.random()}:${pepper}`))).slice(
-      0,
-      32
-    );
+  let effectiveSalt = salt;
+  if (!effectiveSalt) {
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      const randomBuf = new Uint8Array(16);
+      crypto.getRandomValues(randomBuf);
+      effectiveSalt = bytesToHex(randomBuf);
+    } else {
+      effectiveSalt = bytesToHex(
+        sha256Bytes(new TextEncoder().encode(`${Date.now()}:${Math.random()}:${pepper}`))
+      ).slice(0, 32);
+    }
+  }
   let digest = hashDeviceToken(`${effectiveSalt}:${password}`, pepper);
   for (let i = 0; i < 1200; i++) {
     digest = hashDeviceToken(`${effectiveSalt}:${digest}:${i}`, pepper);
   }
   return `upsa_sha256$1200$${effectiveSalt}$${digest}`;
+}
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const rateLimitBuckets = new Map<string, RateLimitEntry>();
+
+/**
+ * Sliding-window in-memory rate limiter for authentication endpoints and brute-force protection.
+ */
+export function checkRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number
+): { allowed: boolean; remaining: number; retryAfterSeconds: number } {
+  const now = Date.now();
+  const current = rateLimitBuckets.get(key);
+
+  // Periodically evict expired entries if map grows large
+  if (rateLimitBuckets.size > 2000) {
+    for (const [k, v] of rateLimitBuckets.entries()) {
+      if (now > v.resetAt) rateLimitBuckets.delete(k);
+    }
+  }
+
+  if (!current || now > current.resetAt) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, remaining: limit - 1, retryAfterSeconds: 0 };
+  }
+
+  if (current.count >= limit) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    return { allowed: false, remaining: 0, retryAfterSeconds };
+  }
+
+  current.count += 1;
+  return {
+    allowed: true,
+    remaining: limit - current.count,
+    retryAfterSeconds: 0,
+  };
+}
+
+export function resetRateLimitsForTests(): void {
+  rateLimitBuckets.clear();
 }
 
 /**

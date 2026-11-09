@@ -9,6 +9,7 @@ import {
   studentSignUpSchema,
 } from '@/lib/validation/schemas';
 import {
+  checkRateLimit,
   generateRandomStudentUsername,
   isAllowedEmailDomain,
   verifyStudentIndexWithApiKey,
@@ -29,6 +30,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const env = getServerEnv();
+    const clientIp =
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      req.headers.get('x-real-ip') ||
+      '127.0.0.1';
 
     if (body.step === 'verify_index') {
       const rawIndex = typeof body.indexNumber === 'string' ? body.indexNumber.trim() : '';
@@ -87,6 +92,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.step === 'signup') {
+      const rateLimit = checkRateLimit(`signup:${clientIp}`, 15, 900_000);
+      if (!rateLimit.allowed) {
+        return apiError(
+          'rate_limited',
+          `Too many sign-up attempts from this network. Please wait ${rateLimit.retryAfterSeconds} seconds before trying again.`,
+          429
+        );
+      }
+
       const parsed = studentSignUpSchema.safeParse(body);
       if (!parsed.success) {
         return apiError(
@@ -136,6 +150,19 @@ export async function POST(req: NextRequest) {
           'invalid_login_input',
           parsed.error.issues[0]?.message ?? 'Enter your UPSA index number or username and password.',
           400
+        );
+      }
+
+      const rateLimit = checkRateLimit(
+        `login:${clientIp}:${parsed.data.identifier.toLowerCase()}`,
+        10,
+        60_000
+      );
+      if (!rateLimit.allowed) {
+        return apiError(
+          'rate_limited',
+          `Too many login attempts. Please wait ${rateLimit.retryAfterSeconds} seconds before trying again.`,
+          429
         );
       }
 
@@ -199,6 +226,19 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const rateLimit = checkRateLimit(
+        `forgot_req:${clientIp}:${parsed.data.identifier.toLowerCase()}`,
+        5,
+        900_000
+      );
+      if (!rateLimit.allowed) {
+        return apiError(
+          'rate_limited',
+          `Too many recovery requests for this account. Please wait ${rateLimit.retryAfterSeconds} seconds before trying again.`,
+          429
+        );
+      }
+
       const resetReq = await dbRequestPasswordReset({
         identifier: parsed.data.identifier,
         pepper: env.DEVICE_HASH_PEPPER,
@@ -215,6 +255,19 @@ export async function POST(req: NextRequest) {
           parsed.error.issues[0]?.message ??
             'Enter your UPSA index number/username, 6-digit recovery code, and a new password.',
           400
+        );
+      }
+
+      const rateLimit = checkRateLimit(
+        `forgot_reset:${clientIp}:${parsed.data.identifier.toLowerCase()}`,
+        5,
+        900_000
+      );
+      if (!rateLimit.allowed) {
+        return apiError(
+          'rate_limited',
+          `Too many recovery attempts. Please wait ${rateLimit.retryAfterSeconds} seconds before trying again.`,
+          429
         );
       }
 

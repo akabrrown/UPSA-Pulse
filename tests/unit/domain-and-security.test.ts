@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   computeHotScore,
   screenContentText,
@@ -9,6 +9,10 @@ import {
   formatThreadAlias,
   signSessionToken,
   verifySessionToken,
+  hashPassword,
+  verifyPassword,
+  checkRateLimit,
+  resetRateLimitsForTests,
 } from '@/lib/domain/pulse-engine';
 import {
   signUpConsentSchema,
@@ -204,6 +208,43 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
     it('gracefully handles raw UUID fallback for backwards compatibility', () => {
       expect(verifySessionToken(userId, pepper)).toBe(userId);
       expect(verifySessionToken('invalid-non-uuid-string', pepper)).toBeNull();
+    });
+  });
+
+  describe('Password Hashing & Constant-Time Verification', () => {
+    const pepper = 'upsa-test-pepper-secret-2026';
+
+    it('hashes passwords using multi-round salted HMAC-SHA256 and verifies authentic passwords', () => {
+      const rawPassword = 'StudentSecretPassword#2026';
+      const hash1 = hashPassword(rawPassword, pepper);
+      const hash2 = hashPassword(rawPassword, pepper);
+
+      // Unique random salt per hash ensures hashes differ for identical passwords
+      expect(hash1).not.toBe(hash2);
+      expect(hash1).toContain('upsa_sha256$1200$');
+
+      expect(verifyPassword(rawPassword, hash1, pepper)).toBe(true);
+      expect(verifyPassword(rawPassword, hash2, pepper)).toBe(true);
+      expect(verifyPassword('WrongPassword#123', hash1, pepper)).toBe(false);
+    });
+  });
+
+  describe('Sliding-Window Auth Rate Limiter', () => {
+    beforeEach(() => {
+      resetRateLimitsForTests();
+    });
+
+    it('allows requests within limit and throttles subsequent requests with retryAfterSeconds', () => {
+      const key = 'test-login-key';
+      // 3 attempts allowed within 10 seconds
+      expect(checkRateLimit(key, 3, 10_000).allowed).toBe(true);
+      expect(checkRateLimit(key, 3, 10_000).allowed).toBe(true);
+      expect(checkRateLimit(key, 3, 10_000).allowed).toBe(true);
+
+      const blocked = checkRateLimit(key, 3, 10_000);
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
+      expect(blocked.retryAfterSeconds).toBeLessThanOrEqual(10);
     });
   });
 });

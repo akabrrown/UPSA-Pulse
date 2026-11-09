@@ -460,6 +460,43 @@ export default function AdminQueuePage() {
     }
   };
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-[#D9A21B] border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-[14px] text-[var(--text-secondary)]">Verifying administrative access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser || (!currentUser.isAdmin && !currentUser.canModerate)) {
+    return (
+      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[12px] p-6 text-center space-y-4 shadow-lg">
+          <div className="w-12 h-12 rounded-full bg-red-950/40 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
+            <Lock className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-[18px] font-bold text-[var(--text-heading)]">Access Restricted</h1>
+            <p className="text-[13px] text-[var(--text-secondary)]">
+              This console is strictly limited to authorized UPSA university administrators and student council moderators. All access attempts are logged.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center w-full min-h-[44px] px-4 rounded-[6px] bg-[#0B2A5B] hover:bg-[#133875] text-[#D9A21B] font-semibold text-[14px] transition-colors border border-[#1C4A8F]"
+            >
+              Return to Campus Feed
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)]">
       <header className="bg-[#0B2A5B] text-white border-b border-[#1C4A8F]">

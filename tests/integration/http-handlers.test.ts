@@ -24,6 +24,7 @@ import { POST as postAppeal, PATCH as patchAppeal } from '@/app/api/appeals/rout
 import { POST as postApproveDevice } from '@/app/api/devices/approve/route';
 import { GET as getAdminLookup } from '@/app/api/admin/lookup/route';
 import { applyModerationActionInStore } from '@/lib/store/pulse-store';
+import { resetRateLimitsForTests } from '@/lib/domain/pulse-engine';
 
 function makeReq(
   url: string,
@@ -51,6 +52,7 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
 
   beforeEach(() => {
     resetPulseStoreForTests();
+    resetRateLimitsForTests();
   });
 
   it('verifies zone and discards coordinates from response', async () => {
