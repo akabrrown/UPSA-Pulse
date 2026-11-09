@@ -2,6 +2,10 @@
 -- Expands UPSA Pulse to 24/7/365 Verified Student Membership across private off-campus hostels
 -- (Madina, Haatso, Atomic, Agbogba, Adenta, Commuters) and Vacation & Recess periods.
 
+alter table private.zones alter column boundary drop not null;
+alter table private.zones drop constraint if exists zones_max_accuracy_m_check;
+alter table private.zones add constraint zones_max_accuracy_m_check check (max_accuracy_m between 20 and 10000);
+
 insert into private.zones (id, name, boundary, max_accuracy_m, is_active, updated_at)
 overriding system value
 values
@@ -23,6 +27,7 @@ values
   )
 on conflict (id) do update
 set name = excluded.name,
+    boundary = excluded.boundary,
     is_active = excluded.is_active,
     max_accuracy_m = excluded.max_accuracy_m,
     updated_at = now();

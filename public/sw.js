@@ -1,4 +1,4 @@
-const CACHE_NAME = 'upsa-pulse-shell-v3';
+const CACHE_NAME = 'upsa-pulse-shell-v4';
 const OFFLINE_ASSETS = [
   '/',
   '/manifest.json',
