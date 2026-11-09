@@ -18,6 +18,7 @@ import {
   deleteOwnPostInStore,
   markAnswerInStore,
   castVoteInStore,
+  togglePostReactionInStore,
   reportContentInStore,
   getModerationQueueFromStore,
   applyModerationActionInStore,
@@ -303,10 +304,38 @@ export async function dbGetFeed(params: {
       isActive: true,
     }));
 
+    const postIds = postsRes.rows.map((r) => r.id);
+    const reactionsMap = new Map<string, Array<{ emoji: string; count: number; reacted: boolean }>>();
+    if (postIds.length > 0) {
+      try {
+        const rxRes = await client.query(
+          `SELECT r.post_id, r.emoji, count(*)::int as count,
+                  bool_or($1::uuid IS NOT NULL AND r.user_id = $1::uuid) as reacted
+           FROM private.post_reactions r
+           WHERE r.post_id = ANY($2::uuid[])
+           GROUP BY r.post_id, r.emoji`,
+          [activeUserId, postIds]
+        );
+        for (const row of rxRes.rows) {
+          const pId = String(row.post_id);
+          const list = reactionsMap.get(pId) ?? [];
+          list.push({
+            emoji: String(row.emoji),
+            count: Number(row.count),
+            reacted: Boolean(row.reacted),
+          });
+          reactionsMap.set(pId, list);
+        }
+      } catch {
+        // Table might be initializing; non-fatal
+      }
+    }
+
     const items: PublicPostView[] = postsRes.rows.map((r) => {
       const zId = Number(r.zone_id ?? 1);
+      const postId = String(r.id);
       return {
-        id: String(r.id),
+        id: postId,
         zoneId: zId,
         zoneName: zoneMap.get(zId) ?? 'UPSA Main Campus',
         channelId: Number(r.channel_id),
@@ -321,6 +350,7 @@ export async function dbGetFeed(params: {
         createdAt: new Date(String(r.created_at)).toISOString(),
         isMine: Boolean(r.is_mine),
         myVote: Number(r.my_vote) as -1 | 0 | 1,
+        reactions: reactionsMap.get(postId) ?? [],
       };
     });
 
@@ -430,6 +460,25 @@ export async function dbGetThread(
       myVote: Number(r.my_vote) as -1 | 0 | 1,
     }));
 
+    let reactions: Array<{ emoji: string; count: number; reacted: boolean }> = [];
+    try {
+      const rxRes = await client.query(
+        `SELECT r.emoji, count(*)::int as count,
+                bool_or(r.user_id = $1::uuid) as reacted
+         FROM private.post_reactions r
+         WHERE r.post_id = $2::uuid
+         GROUP BY r.emoji`,
+        [userId, postId]
+      );
+      reactions = rxRes.rows.map((r) => ({
+        emoji: String(r.emoji),
+        count: Number(r.count),
+        reacted: Boolean(r.reacted),
+      }));
+    } catch {
+      // Non-fatal
+    }
+
     return {
       post: {
         id: String(p.id),
@@ -447,9 +496,38 @@ export async function dbGetThread(
         createdAt: new Date(String(p.created_at)).toISOString(),
         isMine: Boolean(p.is_mine),
         myVote: Number(p.my_vote) as -1 | 0 | 1,
+        reactions,
       },
       replies,
     };
+  });
+}
+
+export async function dbTogglePostReaction(
+  userId: string,
+  postId: string,
+  emoji: string
+): Promise<{ emoji: string; count: number; reacted: boolean }> {
+  if (!shouldUseLiveDb()) {
+    return togglePostReactionInStore(userId, postId, emoji);
+  }
+  return withAuthenticatedUser(userId, async (client) => {
+    const res = await client.query(
+      `SELECT * FROM feed.toggle_post_reaction($1::uuid, $2::text)`,
+      [postId, emoji]
+    );
+    const row = res.rows[0];
+    const result = {
+      emoji: String(row?.emoji ?? emoji),
+      count: Number(row?.count ?? 0),
+      reacted: Boolean(row?.reacted),
+    };
+    void broadcastRealtimeEvent('all', 'reaction_toggled', {
+      postId,
+      emoji: result.emoji,
+      count: result.count,
+    });
+    return result;
   });
 }
 

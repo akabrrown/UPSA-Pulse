@@ -66,6 +66,16 @@
 
 html,
 body {
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  -webkit-tap-highlight-color: transparent;
   background-color: var(--surface-app);
   color: var(--text-primary);
   font-family: var(--font-figtree), system-ui, -apple-system, sans-serif;
@@ -74,6 +84,14 @@ body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.selectable-text {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Visible gold focus ring with 2px navy offset — Design Brief Section 2.2 & 8 */

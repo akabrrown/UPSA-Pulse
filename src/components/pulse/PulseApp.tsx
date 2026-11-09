@@ -26,6 +26,7 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  Smile,
   Sparkles,
   Sun,
   Trash2,
@@ -41,10 +42,13 @@ import type {
   ChannelRecord,
   LegalDocumentRecord,
   NotificationRecord,
+  PostReactionSummary,
   PublicPostView,
   PublicReplyView,
 } from '@/lib/store/pulse-store';
 import type { FeedSort, ReportReason } from '@/lib/validation/schemas';
+
+const REACTION_EMOJIS = ['🔥', '😂', '❤️', '💡', '👏', '😮'] as const;
 
 type ActiveTab = 'feed' | 'channels' | 'alerts' | 'me';
 type OnboardingStage = 'none' | 'welcome' | 'signup' | 'otp' | 'location_explainer' | 'outside_zone';
@@ -92,6 +96,8 @@ function getBrowserDeviceToken(): string | undefined {
     return undefined;
   }
 }
+
+const ALLOWED_EMOJIS = ['🔥', '😂', '❤️', '💡', '👏', '😮'] as const;
 
 const REPORT_REASONS: Array<{ value: ReportReason; label: string; detail: string; priority: boolean }> = [
   {
@@ -223,6 +229,7 @@ export function PulseApp() {
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
   const [posts, setPosts] = useState<PublicPostView[]>([]);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
+  const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(null);
   const [newPostsCount, setNewPostsCount] = useState<number>(0);
 
   // Active Thread State (F6, F8)
@@ -709,6 +716,111 @@ export function PulseApp() {
       }
     } catch {
       void loadFeed();
+    }
+  };
+
+  useEffect(() => {
+    if (!reactionPickerPostId) return;
+    const handleDocumentClick = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && !target.closest('.reaction-picker-container')) {
+        setReactionPickerPostId(null);
+      }
+    };
+    document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('touchstart', handleDocumentClick);
+    return () => {
+      document.removeEventListener('click', handleDocumentClick);
+      document.removeEventListener('touchstart', handleDocumentClick);
+    };
+  }, [reactionPickerPostId]);
+
+  const handleToggleReaction = async (postId: string, emoji: string) => {
+    if (isOffline) return;
+    setReactionPickerPostId(null);
+
+    const updateReactionsList = (current?: PostReactionSummary[]): PostReactionSummary[] => {
+      const list = current ? [...current] : [];
+      const idx = list.findIndex((r) => r.emoji === emoji);
+      if (idx >= 0) {
+        const item = list[idx]!;
+        if (item.reacted) {
+          const nextCount = item.count - 1;
+          if (nextCount <= 0) {
+            return list.filter((_, i) => i !== idx);
+          }
+          return list.map((r, i) =>
+            i === idx ? { ...r, count: nextCount, reacted: false } : r
+          );
+        } else {
+          return list.map((r, i) =>
+            i === idx ? { ...r, count: r.count + 1, reacted: true } : r
+          );
+        }
+      } else {
+        return [...list, { emoji, count: 1, reacted: true }];
+      }
+    };
+
+    // Optimistic update in feed posts
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        return { ...p, reactions: updateReactionsList(p.reactions) };
+      })
+    );
+
+    // Optimistic update in thread post if active
+    if (threadData && threadData.post.id === postId) {
+      setThreadData({
+        ...threadData,
+        post: {
+          ...threadData.post,
+          reactions: updateReactionsList(threadData.post.reactions),
+        },
+      });
+    }
+
+    try {
+      const res = await fetch(`/api/posts/${postId}/react`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        void loadFeed();
+        if (activeThreadId) void loadThread(activeThreadId);
+        setComposeStatusToast(json.error?.message ?? 'Could not update reaction.');
+      } else if (json.data) {
+        const result: { emoji: string; count: number; reacted: boolean } = json.data;
+        const applyServerResult = (current?: PostReactionSummary[]): PostReactionSummary[] => {
+          const list = current ? [...current] : [];
+          const idx = list.findIndex((r) => r.emoji === result.emoji);
+          if (result.count <= 0) {
+            return list.filter((r) => r.emoji !== result.emoji);
+          }
+          if (idx >= 0) {
+            return list.map((r, i) =>
+              i === idx ? { ...r, count: result.count, reacted: result.reacted } : r
+            );
+          }
+          return [...list, { emoji: result.emoji, count: result.count, reacted: result.reacted }];
+        };
+
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, reactions: applyServerResult(p.reactions) } : p))
+        );
+        if (threadData && threadData.post.id === postId) {
+          setThreadData({
+            ...threadData,
+            post: { ...threadData.post, reactions: applyServerResult(threadData.post.reactions) },
+          });
+        }
+      }
+    } catch {
+      void loadFeed();
+      if (activeThreadId) void loadThread(activeThreadId);
     }
   };
 
@@ -1355,7 +1467,7 @@ export function PulseApp() {
     const currentCard = welcomeCards[welcomeSlide] ?? welcomeCards[0]!;
 
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-between max-w-[640px] mx-auto px-4 py-8">
+      <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-between px-4 py-8">
         <div className="flex items-center justify-between">
           <div className="inline-flex items-center gap-2.5 font-bold text-[18px] text-[var(--text-heading)]">
             <img
@@ -1477,7 +1589,7 @@ export function PulseApp() {
     const pwdStrength = getPasswordStrength(signupPassword);
 
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-center px-4 py-8 sm:py-12">
+      <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-[520px] mx-auto space-y-5">
           <div className="flex items-center justify-between pb-3 border-b border-[var(--border-color)]">
             <span className="text-[15px] font-bold text-[#0B2A5B] dark:text-[#D9A21B]">
@@ -2065,7 +2177,7 @@ export function PulseApp() {
 
   if (onboardingStage === 'otp') {
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-6">
+      <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden bg-[var(--surface-app)] text-[var(--text-primary)] px-4 py-8 space-y-6">
         <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
           Enter your 6-digit code
         </h1>
@@ -2113,7 +2225,7 @@ export function PulseApp() {
 
   if (onboardingStage === 'location_explainer') {
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-6">
+      <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden bg-[var(--surface-app)] text-[var(--text-primary)] px-4 py-8 space-y-6">
         <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-6 space-y-4">
           <div className="inline-flex items-center gap-2 text-[#8A6200] font-semibold text-[13px]">
             <MapPin className="w-4 h-4" aria-hidden="true" />
@@ -2183,7 +2295,7 @@ export function PulseApp() {
 
   if (onboardingStage === 'outside_zone') {
     return (
-      <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-6">
+      <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden bg-[var(--surface-app)] text-[var(--text-primary)] px-4 py-8 space-y-6">
         <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-6 space-y-4">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-1 rounded-full text-[12px] font-bold bg-[#EBF5EE] text-[#1F7A4D]">
@@ -2249,7 +2361,7 @@ export function PulseApp() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--surface-app)] text-[var(--text-primary)] pb-20">
+    <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden flex flex-col bg-[var(--surface-app)] text-[var(--text-primary)] pb-20 relative">
       {/* Top Bar (navy-900 #0B2A5B) — Design Brief Section 4 */}
       <header className="sticky top-0 z-30 bg-[#0B2A5B] text-white border-b border-[#1C4A8F]">
         <div className="max-w-[640px] mx-auto px-4 pt-3 pb-0">
@@ -2681,6 +2793,64 @@ export function PulseApp() {
                 {threadData.post.body}
               </p>
 
+              {/* Thread Post Emoji Reactions */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-2">
+                {threadData.post.reactions &&
+                  threadData.post.reactions.length > 0 &&
+                  threadData.post.reactions.map((rx) => (
+                    <button
+                      key={rx.emoji}
+                      type="button"
+                      disabled={isOffline}
+                      onClick={() => void handleToggleReaction(threadData.post.id, rx.emoji)}
+                      className={`min-h-[36px] px-2.5 py-1 rounded-full text-[13px] font-semibold inline-flex items-center gap-1.5 border transition-all cursor-pointer ${
+                        rx.reacted
+                          ? 'bg-[#0B2A5B]/10 border-[#0B2A5B] text-[#0B2A5B] dark:bg-[#1C4A8F]/30 dark:border-[#5C94E8] dark:text-[#DCE6F5]'
+                          : 'bg-[var(--surface-subtle)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[#DCE6F5]/50'
+                      }`}
+                      aria-label={`${rx.emoji} reaction, count ${rx.count}, ${
+                        rx.reacted ? 'reacted by you' : 'not reacted'
+                      }`}
+                    >
+                      <span className="text-[16px] leading-none">{rx.emoji}</span>
+                      <span>{rx.count}</span>
+                    </button>
+                  ))}
+
+                <div className="relative reaction-picker-container">
+                  <button
+                    type="button"
+                    disabled={isOffline}
+                    onClick={() =>
+                      setReactionPickerPostId(
+                        reactionPickerPostId === threadData.post.id ? null : threadData.post.id
+                      )
+                    }
+                    aria-label="Add reaction"
+                    className="min-h-[36px] px-2.5 rounded-full border border-[var(--border-color)] bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:text-[#0B2A5B] dark:hover:text-[#DCE6F5] hover:border-[#1C4A8F] inline-flex items-center justify-center gap-1.5 text-[13px] font-medium transition-colors cursor-pointer"
+                  >
+                    <Smile className="w-4 h-4 text-[#1C4A8F] dark:text-[#D9A21B]" />
+                    <span>React</span>
+                  </button>
+
+                  {reactionPickerPostId === threadData.post.id && (
+                    <div className="absolute left-0 bottom-full mb-2 z-50 flex items-center gap-1.5 p-1.5 rounded-full bg-[var(--surface-card)] border border-[var(--border-color)] shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95">
+                      {ALLOWED_EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => void handleToggleReaction(threadData.post.id, emoji)}
+                          className="w-10 h-10 flex items-center justify-center text-[22px] rounded-full hover:bg-[var(--surface-subtle)] hover:scale-125 active:scale-90 transition-transform cursor-pointer"
+                          aria-label={`React with ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between pt-2 border-t border-[var(--border-color)]">
                 <div className="flex items-center gap-2">
                   <button
@@ -3099,6 +3269,68 @@ export function PulseApp() {
                             Read more
                           </button>
                         )}
+                      </div>
+
+                      {/* Emoji Reactions Rail */}
+                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        {post.reactions &&
+                          post.reactions.length > 0 &&
+                          post.reactions.map((rx) => (
+                            <button
+                              key={rx.emoji}
+                              type="button"
+                              disabled={isOffline}
+                              onClick={() => void handleToggleReaction(post.id, rx.emoji)}
+                              className={`min-h-[32px] px-2 py-0.5 rounded-full text-[12px] font-semibold inline-flex items-center gap-1 border transition-all cursor-pointer ${
+                                rx.reacted
+                                  ? 'bg-[#0B2A5B]/10 border-[#0B2A5B] text-[#0B2A5B] dark:bg-[#1C4A8F]/30 dark:border-[#5C94E8] dark:text-[#DCE6F5]'
+                                  : 'bg-[var(--surface-subtle)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[#DCE6F5]/50'
+                              }`}
+                              aria-label={`${rx.emoji} reaction, count ${rx.count}, ${
+                                rx.reacted ? 'reacted by you' : 'not reacted'
+                              }`}
+                            >
+                              <span className="text-[14px] leading-none">{rx.emoji}</span>
+                              <span>{rx.count}</span>
+                            </button>
+                          ))}
+
+                        <div className="relative reaction-picker-container">
+                          <button
+                            type="button"
+                            disabled={isOffline}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReactionPickerPostId(
+                                reactionPickerPostId === post.id ? null : post.id
+                              );
+                            }}
+                            aria-label="Add reaction"
+                            className="min-h-[32px] px-2 rounded-full border border-[var(--border-color)] bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:text-[#0B2A5B] dark:hover:text-[#DCE6F5] hover:border-[#1C4A8F] inline-flex items-center justify-center gap-1 text-[12px] font-medium transition-colors cursor-pointer"
+                          >
+                            <Smile className="w-3.5 h-3.5 text-[#1C4A8F] dark:text-[#D9A21B]" />
+                            <span className="text-[11px] font-bold">+</span>
+                          </button>
+
+                          {reactionPickerPostId === post.id && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute left-0 bottom-full mb-1.5 z-40 flex items-center gap-1 p-1 rounded-full bg-[var(--surface-card)] border border-[var(--border-color)] shadow-xl backdrop-blur-md animate-in fade-in zoom-in-95"
+                            >
+                              {ALLOWED_EMOJIS.map((emoji) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => void handleToggleReaction(post.id, emoji)}
+                                  className="w-8 h-8 flex items-center justify-center text-[18px] rounded-full hover:bg-[var(--surface-subtle)] hover:scale-125 active:scale-90 transition-transform cursor-pointer"
+                                  aria-label={`React with ${emoji}`}
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Footer: Reply count, Ask badge (Open / Answered), Report */}

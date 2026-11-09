@@ -90,6 +90,12 @@ export interface ReplyRecord {
   createdAt: string;
 }
 
+export interface PostReactionSummary {
+  emoji: string;
+  count: number;
+  reacted: boolean;
+}
+
 export interface PublicPostView {
   id: string;
   zoneId: number;
@@ -106,6 +112,7 @@ export interface PublicPostView {
   createdAt: string;
   isMine: boolean;
   myVote: -1 | 0 | 1;
+  reactions?: PostReactionSummary[];
 }
 
 export interface PublicReplyView {
@@ -226,6 +233,7 @@ interface PulseState {
   replies: Map<string, ReplyRecord>;
   threadAliases: Map<string, Map<string, number>>; // postId -> (userId -> aliasNo)
   votes: Map<string, -1 | 1>; // `${userId}:${targetType}:${targetId}` -> value
+  postReactions: Map<string, Set<string>>; // `${postId}:${emoji}` -> Set<userId>
   reports: ReportRecord[];
   moderationActions: ModerationActionRecord[];
   unmaskRequests: UnmaskRequestRecord[];
@@ -499,6 +507,7 @@ function createInitialState(): PulseState {
     replies,
     threadAliases,
     votes: new Map(),
+    postReactions: new Map(),
     reports: [],
     moderationActions: [],
     unmaskRequests: [],
@@ -565,6 +574,19 @@ function toPublicPostView(post: PostRecord, viewerUserId: string): PublicPostVie
   const voteKey = `${viewerUserId}:post:${post.id}`;
   const myVote = state.votes.get(voteKey) ?? 0;
   const zoneName = state.zones.find((z) => z.id === post.zoneId)?.name ?? 'UPSA Main Campus';
+
+  const reactions: PostReactionSummary[] = [];
+  const allowedEmojis = ['🔥', '😂', '❤️', '💡', '👏', '😮'];
+  for (const emoji of allowedEmojis) {
+    const key = `${post.id}:${emoji}`;
+    const userSet = state.postReactions?.get(key);
+    const count = userSet ? userSet.size : 0;
+    const reacted = userSet ? userSet.has(viewerUserId) : false;
+    if (count > 0) {
+      reactions.push({ emoji, count, reacted });
+    }
+  }
+
   return {
     id: post.id,
     zoneId: post.zoneId,
@@ -581,6 +603,7 @@ function toPublicPostView(post: PostRecord, viewerUserId: string): PublicPostVie
     createdAt: post.createdAt,
     isMine: post.authorId !== null && post.authorId === viewerUserId,
     myVote,
+    reactions,
   };
 }
 
@@ -1032,6 +1055,42 @@ export function castVoteInStore(
     score: targetReply!.score,
     myVote: input.value,
     hidden: false,
+  };
+}
+
+export function togglePostReactionInStore(
+  userId: string,
+  postId: string,
+  emoji: string
+): { emoji: string; count: number; reacted: boolean } {
+  requireActiveZoneUser(userId);
+  const allowed = ['🔥', '😂', '❤️', '💡', '👏', '😮'];
+  if (!allowed.includes(emoji)) {
+    throw new Error('invalid_emoji');
+  }
+  const post = state.posts.get(postId);
+  if (!post || post.status !== 'published') {
+    throw new Error('post_unavailable');
+  }
+
+  const key = `${postId}:${emoji}`;
+  let userSet = state.postReactions.get(key);
+  if (!userSet) {
+    userSet = new Set<string>();
+    state.postReactions.set(key, userSet);
+  }
+
+  const reacted = !userSet.has(userId);
+  if (reacted) {
+    userSet.add(userId);
+  } else {
+    userSet.delete(userId);
+  }
+
+  return {
+    emoji,
+    count: userSet.size,
+    reacted,
   };
 }
 

@@ -15,6 +15,7 @@ import {
   signUpStudentInStore,
   getNotificationsFromStore,
   markNotificationsReadInStore,
+  togglePostReactionInStore,
 } from '@/lib/store/pulse-store';
 
 describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 & 9)', () => {
@@ -374,6 +375,51 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
         pepper: 'test-pepper',
       })
     ).toThrow('username_already_taken');
+  });
+
+  it('toggles post emoji reactions, updates counts, and reflects user reaction status in feed and thread', () => {
+    verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
+    verifyUserZoneInStore(studentKojo, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
+
+    const post = createPostInStore(studentEfua, {
+      channelId: 1,
+      kind: 'post',
+      body: 'Check out the new study room in library 2nd floor!',
+    });
+
+    // Efua reacts with 🔥
+    const res1 = togglePostReactionInStore(studentEfua, post.id, '🔥');
+    expect(res1).toEqual({ emoji: '🔥', count: 1, reacted: true });
+
+    // Kojo reacts with 🔥 and ❤️
+    togglePostReactionInStore(studentKojo, post.id, '🔥');
+    togglePostReactionInStore(studentKojo, post.id, '❤️');
+
+    // Kojo views the thread
+    const threadKojo = getThreadFromStore(studentKojo, post.id);
+    expect(threadKojo.post.reactions).toEqual([
+      { emoji: '🔥', count: 2, reacted: true },
+      { emoji: '❤️', count: 1, reacted: true },
+    ]);
+
+    // Efua views feed: Efua has reacted to 🔥 but NOT to ❤️
+    const feedEfua = getFeedFromStore({ userId: studentEfua, sort: 'new' });
+    const postInFeed = feedEfua.items.find((p) => p.id === post.id);
+    expect(postInFeed?.reactions).toEqual([
+      { emoji: '🔥', count: 2, reacted: true },
+      { emoji: '❤️', count: 1, reacted: false },
+    ]);
+
+    // Efua clicks 🔥 again to unreact
+    const resUnreact = togglePostReactionInStore(studentEfua, post.id, '🔥');
+    expect(resUnreact).toEqual({ emoji: '🔥', count: 1, reacted: false });
+
+    const feedAfterUnreact = getFeedFromStore({ userId: studentEfua, sort: 'new' });
+    const postAfter = feedAfterUnreact.items.find((p) => p.id === post.id);
+    expect(postAfter?.reactions).toEqual([
+      { emoji: '🔥', count: 1, reacted: false },
+      { emoji: '❤️', count: 1, reacted: false },
+    ]);
   });
 });
 
