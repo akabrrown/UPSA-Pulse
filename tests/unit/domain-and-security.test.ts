@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   computeHotScore,
   screenContentText,
+  detectRealPersonNames,
   verifyZonePoint,
   hashDeviceToken,
   isAllowedEmailDomain,
@@ -116,6 +117,30 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
       const result = screenContentText('Where do Level 100 students submit medical forms?');
       expect(result.status).toBe('published');
       expect(result.showSupportCard).toBe(false);
+    });
+
+    it('detects real human names mentioned in confessions and holds them for anti-harassment review', () => {
+      const confession1 = 'Confession: I really like Kofi Mensah from Level 300 Accounting';
+      const names1 = detectRealPersonNames(confession1);
+      expect(names1.length).toBeGreaterThan(0);
+      expect(names1).toContain('Kofi Mensah');
+
+      const screen1 = screenContentText(confession1);
+      expect(screen1.status).toBe('held');
+      expect(screen1.category).toBe('named_person_doxxing');
+
+      const confession2 = 'Ama Boateng was crying at Hostel B yesterday';
+      const names2 = detectRealPersonNames(confession2);
+      expect(names2).toContain('Ama Boateng');
+
+      const confession3 = 'I heard Dr. Osei is giving an unannounced test';
+      const names3 = detectRealPersonNames(confession3);
+      expect(names3.some((n) => n.toLowerCase().includes('osei'))).toBe(true);
+
+      // Sentences using common nouns and words like faith, joy, hope must not be flagged
+      expect(detectRealPersonNames('I have faith that we will pass the mid-sem exams')).toEqual([]);
+      expect(detectRealPersonNames('I feel so much joy after finishing my assignment')).toEqual([]);
+      expect(detectRealPersonNames('Which hostel has the best water supply?')).toEqual([]);
     });
   });
 

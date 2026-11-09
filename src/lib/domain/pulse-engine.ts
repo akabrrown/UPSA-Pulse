@@ -1,4 +1,37 @@
 import type { ContentStatus } from '@/lib/validation/schemas';
+import nlp from 'compromise';
+
+// Custom plugin training compromise with common Ghanaian, African, and campus first/last names and titles
+const GHANAIAN_FIRST_NAMES = [
+  'kofi', 'kwame', 'kwaku', 'kweku', 'yaw', 'kwasi', 'kwesi', 'kojo', 'kodjo', 'kwabena', 'kobina',
+  'fiifi', 'yoofi', 'paa', 'nana', 'nii', 'tetteh',
+  'ama', 'akosua', 'adwoa', 'abena', 'abenaa', 'akua', 'yaa', 'afia', 'afua', 'efua',
+  'naa', 'dede', 'mansa', 'korkor',
+];
+
+const GHANAIAN_LAST_NAMES = [
+  'mensah', 'osei', 'owusu', 'boateng', 'appiah', 'asare', 'asante', 'frimpong', 'agyemang',
+  'darko', 'bonsu', 'antwi', 'baah', 'boakye', 'amponsah', 'sarpong', 'twumasi', 'opoku',
+  'addo', 'quaye', 'lamptey', 'aryee', 'annan', 'sowah', 'laryea', 'agbedor', 'dogbe',
+  'gbedemah', 'dzisah', 'ametefe', 'ofori', 'danquah', 'acheampong', 'kufuor', 'mahama',
+  'bawumia', 'akuffo', 'gyampo', 'baffour', 'agyapong', 'badu', 'kwarteng', 'poku', 'sarkodie',
+  'tagoe', 'vanderpuye', 'coffie', 'bruce', 'quist', 'crabbe', 'bannerman', 'mills', 'rawlings',
+  'atta',
+];
+
+const GHANAIAN_HONORIFICS = [
+  'dr', 'prof', 'professor', 'mr', 'mrs', 'ms', 'miss', 'rev', 'reverend', 'pastor', 'hon',
+  'lecturer', 'dean', 'hod',
+];
+
+const customLexiconWords: Record<string, string> = {};
+for (const fn of GHANAIAN_FIRST_NAMES) customLexiconWords[fn] = 'FirstName';
+for (const ln of GHANAIAN_LAST_NAMES) customLexiconWords[ln] = 'LastName';
+for (const hn of GHANAIAN_HONORIFICS) customLexiconWords[hn] = 'Honorific';
+
+nlp.plugin({
+  words: customLexiconWords,
+});
 
 const SHA256_K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -595,9 +628,72 @@ export function verifyZonePoint(
 }
 
 /**
+ * Context-based Named Entity Recognition (NER) to detect real human names mentioned in confessions
+ * or posts to prevent doxxing and harassment, while avoiding false positives on common nouns (e.g. faith, joy)
+ * and campus facility names (e.g. "Joshua Alabi block", "Ampomah building").
+ */
+export function detectRealPersonNames(text: string): string[] {
+  if (!text || typeof text !== 'string') return [];
+  const clean = text.trim();
+  if (clean.length < 3) return [];
+
+  const doc = nlp(clean);
+  const detected = doc.people().out('array') as string[];
+
+  // Common dictionary words that are also capitalized or first names in English
+  const COMMON_DICTIONARY_WORDS = new Set([
+    'faith', 'joy', 'hope', 'grace', 'mercy', 'patience', 'peace', 'blessing',
+    'august', 'may', 'june', 'april', 'general', 'level', 'hostel', 'campus',
+  ]);
+
+  const validNames: string[] = [];
+  for (const name of detected) {
+    const trimmed = name.trim();
+    const parts = trimmed.split(/\s+/);
+    // If it's an isolated single word, ensure it's not an ordinary dictionary noun
+    if (parts.length === 1) {
+      const lower = trimmed.toLowerCase();
+      if (COMMON_DICTIONARY_WORDS.has(lower)) continue;
+      if (!/^[A-Z][a-z]+$/.test(trimmed)) continue;
+    }
+    validNames.push(trimmed);
+  }
+
+  // Regex check for honorific + name patterns (e.g., "Dr. Osei", "Prof. Boateng", "Mr. Mensah", "Miss Akosua")
+  const honorificRegex = /\b(Dr\.?|Prof\.?|Professor|Mr\.?|Mrs\.?|Ms\.?|Miss|Rev\.?|Lecturer|Dean|HOD)\s+([A-Z][a-zA-Z'-]+)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = honorificRegex.exec(clean)) !== null) {
+    const matchedStr = match[0].trim();
+    if (!validNames.some((n) => n.toLowerCase() === matchedStr.toLowerCase())) {
+      validNames.push(matchedStr);
+    }
+  }
+
+  // Filter out campus facilities named after people (e.g. "Joshua Alabi block", "Ampomah hall", "Library")
+  const filteredNames: string[] = [];
+  for (const name of validNames) {
+    const cleanPattern = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const facilitySuffixRegex = new RegExp(
+      `\\b${cleanPattern}\\s+(block|hall|building|library|auditorium|complex|centre|center|hostel|clinic|gate|court|field)\\b`,
+      'i'
+    );
+    if (facilitySuffixRegex.test(clean)) {
+      continue;
+    }
+    filteredNames.push(name);
+  }
+
+  return filteredNames;
+}
+
+const CONFESSION_HARASSMENT_CONTEXT_REGEX =
+  /\b(confession|confess|confessing|crush|dating|cheat|cheating|sleeping with|hookup|crying|rumor|toxic|liar|scammer|thief|stole|hate|dr\.?|prof\.?|professor|lecturer|dean|hod)\b/i;
+
+/**
  * POST-3 & MOD-2:
- * Keyword and pattern pre-screen: matching posts are held for review, others publish immediately.
+ * Keyword, pattern, and Named Entity pre-screen: matching posts are held for review, others publish immediately.
  * Content flagged for self-harm triggers a support card pointing to UPSA Guidance & Counselling Unit.
+ * Mentions of real human names in confessions/harassment contexts are held under 'named_person_doxxing'.
  */
 export function screenContentText(
   body: string,
@@ -606,6 +702,7 @@ export function screenContentText(
   status: ContentStatus;
   category: string | null;
   showSupportCard: boolean;
+  flaggedNames?: string[];
 } {
   const normalized = body.trim();
   let matchedCategory: string | null = null;
@@ -638,6 +735,20 @@ export function screenContentText(
       category: matchedCategory,
       showSupportCard: isSelfHarm,
     };
+  }
+
+  // Context-based Named Entity Recognition (Anti-Harassment in confessions & callouts)
+  const isConfessionOrCallout = CONFESSION_HARASSMENT_CONTEXT_REGEX.test(normalized);
+  if (isConfessionOrCallout) {
+    const flaggedNames = detectRealPersonNames(normalized);
+    if (flaggedNames.length > 0) {
+      return {
+        status: 'held',
+        category: 'named_person_doxxing',
+        showSupportCard: false,
+        flaggedNames,
+      };
+    }
   }
 
   return {
