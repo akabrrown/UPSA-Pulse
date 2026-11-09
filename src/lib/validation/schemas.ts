@@ -29,7 +29,7 @@ export type ReportReason = z.infer<typeof reportReasonSchema>;
 export const feedSortSchema = z.enum(['hot', 'new', 'top24']);
 export type FeedSort = z.infer<typeof feedSortSchema>;
 
-// AUTH-1 & AUTH-2: Student sign-in with UPSA student confirmation and 3 separate legal consents
+// Student onboarding consent validation
 export const signUpConsentSchema = z.object({
   email: z.string().trim().email('Enter a valid email address'),
   adultConfirmed: z.literal(true, {
@@ -121,14 +121,14 @@ export const forgotPasswordResetSchema = z.object({
     .max(128, 'Password cannot exceed 128 characters'),
 });
 
-// ZONE-1 & ZONE-2: Position verification input
+// Geolocation verification payload
 export const zoneVerifySchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   accuracy: z.number().positive().max(10000),
 });
 
-// FEED-1 & FEED-2: Feed query parameters
+// Feed query filters and pagination
 export const feedQuerySchema = z.object({
   sort: feedSortSchema.default('hot'),
   zoneId: z.coerce.number().int().positive().optional(),
@@ -138,7 +138,7 @@ export const feedQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-// POST-1: Compose text post up to 500 chars
+// New post payload
 export const createPostSchema = z.object({
   zoneId: z.number().int().positive().optional(),
   channelId: z.number().int().positive(),
@@ -150,7 +150,7 @@ export const createPostSchema = z.object({
     .max(500, 'Post cannot exceed 500 characters'),
 });
 
-// REPLY-1: Flat replies up to 300 chars
+// Reply payload
 export const createReplySchema = z.object({
   body: z
     .string()
@@ -159,14 +159,14 @@ export const createReplySchema = z.object({
     .max(300, 'Reply cannot exceed 300 characters'),
 });
 
-// VOTE-1: One vote per item (-1, 0, or 1)
+// Vote submission
 export const castVoteSchema = z.object({
   targetType: targetTypeSchema,
   targetId: z.string().uuid(),
   value: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
 });
 
-// REPORT-1: Report post or reply with reason and optional 300-char note
+// Content moderation report
 export const reportContentSchema = z.object({
   targetType: targetTypeSchema,
   targetId: z.string().uuid(),
@@ -174,13 +174,13 @@ export const reportContentSchema = z.object({
   note: z.string().trim().max(300).optional(),
 });
 
-// LEGAL-1 & F14: Record acceptance of a document version
+// Legal consent tracking
 export const recordConsentSchema = z.object({
   document: z.enum(['terms', 'privacy', 'community_guidelines']),
   version: z.string().trim().min(1).max(20),
 });
 
-// ACCT-2 & F13: Data access or correction request
+// User data rights request
 export const dataRequestSchema = z.object({
   type: z.enum(['access', 'correction']),
   details: z.string().trim().min(5, 'Please describe your request').max(1000),

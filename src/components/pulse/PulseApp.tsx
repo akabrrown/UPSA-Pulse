@@ -2,13 +2,13 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   AlertTriangle,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   Bell,
-  Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -16,9 +16,7 @@ import {
   Eye,
   EyeOff,
   Flag,
-  HeartHandshake,
   Layers,
-  Lock,
   MapPin,
   Moon,
   MoreVertical,
@@ -47,8 +45,6 @@ import type {
   PublicReplyView,
 } from '@/lib/store/pulse-store';
 import type { FeedSort, ReportReason } from '@/lib/validation/schemas';
-
-const REACTION_EMOJIS = ['🔥', '😂', '❤️', '💡', '👏', '😮'] as const;
 
 type ActiveTab = 'feed' | 'channels' | 'alerts' | 'me';
 type OnboardingStage = 'none' | 'welcome' | 'signup' | 'otp' | 'location_explainer' | 'outside_zone';
@@ -182,11 +178,10 @@ export function PulseApp() {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [overflowOpen, setOverflowOpen] = useState<boolean>(false);
 
-  // Onboarding & Zone Gate Flow State (F1, F2, F3)
+  // Onboarding & Authentication State
   const [onboardingStage, setOnboardingStage] = useState<OnboardingStage>('none');
   const [welcomeSlide, setWelcomeSlide] = useState<number>(0);
   const [authMode, setAuthMode] = useState<'signup' | 'login' | 'forgot'>('signup');
-  const [signupUsername, setSignupUsername] = useState<string>('');
   const [usernameTakenError, setUsernameTakenError] = useState<string | null>(null);
   const [signupIndexNumber, setSignupIndexNumber] = useState<string>('');
   const [signupPassword, setSignupPassword] = useState<string>('');
@@ -212,7 +207,7 @@ export function PulseApp() {
   const [authSubmitting, setAuthSubmitting] = useState<boolean>(false);
   const [locationAllowed, setLocationAllowed] = useState<boolean>(false);
 
-  // Feed & Thread Data State (5 UI states: loading, empty, error, success, offline)
+  // Feed & Thread Data State
   const [loading, setLoading] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -232,7 +227,7 @@ export function PulseApp() {
   const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(null);
   const [newPostsCount, setNewPostsCount] = useState<number>(0);
 
-  // Active Thread State (F6, F8)
+  // Active Thread State
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threadData, setThreadData] = useState<{
     post: PublicPostView;
@@ -241,7 +236,7 @@ export function PulseApp() {
   const [replyBody, setReplyBody] = useState<string>('');
   const [replySubmitting, setReplySubmitting] = useState<boolean>(false);
 
-  // Compose Sheet State (F5)
+  // Compose State
   const [composeOpen, setComposeOpen] = useState<boolean>(false);
   const [composeZoneId, setComposeZoneId] = useState<number>(1);
   const [composeChannelId, setComposeChannelId] = useState<number>(1);
@@ -297,7 +292,7 @@ export function PulseApp() {
   const [legalUpdateModalOpen, setLegalUpdateModalOpen] = useState<boolean>(false);
   const [legalUpdateChecked, setLegalUpdateChecked] = useState<boolean>(false);
 
-  // Dedicated Background Feed Worker (FEED-WORKER-1)
+  // Background feed worker
   const feedWorkerRef = useRef<Worker | null>(null);
   const [liveSyncActive, setLiveSyncActive] = useState<boolean>(false);
 
@@ -352,7 +347,7 @@ export function PulseApp() {
         return;
       }
 
-      // Deduplicate by id as specified in TDD Section 7
+      // Deduplicate by post ID
       const seen = new Set<string>();
       const deduped: PublicPostView[] = [];
       for (const item of json.data.items as PublicPostView[]) {
@@ -490,8 +485,7 @@ export function PulseApp() {
     }
   }, [loadFeed, loadMeAndAlerts]);
 
-  // Dedicated Background Feed Worker (FEED-WORKER-1)
-  // Keeps campus feeds fresh in real time without manual page refreshes
+  // Background feed synchronization
   useEffect(() => {
     if (typeof window === 'undefined' || typeof Worker === 'undefined') return;
 
@@ -566,6 +560,7 @@ export function PulseApp() {
       feedWorkerRef.current = null;
       setLiveSyncActive(false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update worker config whenever feed filters change
@@ -583,7 +578,7 @@ export function PulseApp() {
     }
   }, [sort, selectedZoneId, selectedChannelId, asksOnly]);
 
-  // Supabase Realtime broadcast listener on place channels (TDD Section 7)
+  // Realtime channel events
   useEffect(() => {
     let supabase: ReturnType<typeof createSupabaseBrowserClient> | null = null;
     try {
@@ -659,7 +654,7 @@ export function PulseApp() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeThreadId, loadThread, selectedZoneId]);
+  }, [activeThreadId, loadFeed, loadThread, selectedZoneId]);
 
   const handleVote = async (
     targetType: 'post' | 'reply',
@@ -671,7 +666,7 @@ export function PulseApp() {
     const nextValue: -1 | 0 | 1 = currentVote === clickedValue ? 0 : clickedValue;
     const delta = nextValue - currentVote;
 
-    // Optimistic update (App Flow F7)
+    // Optimistic vote update
     if (targetType === 'post') {
       setPosts((prev) =>
         prev.map((p) =>
@@ -1000,11 +995,6 @@ export function PulseApp() {
       .catch(() => undefined);
   }, []);
 
-  const setSessionUserCookie = (_userId: string) => {
-    // Session cookies are set exclusively server-side via HttpOnly, Secure, SameSite=Lax
-    // to strictly protect against XSS token harvesting and client-side cookie tampering.
-  };
-
   const handleVerifyStudentIndex = async () => {
     setAuthError(null);
     setIndexVerifiedBadge(null);
@@ -1033,6 +1023,7 @@ export function PulseApp() {
         return;
       }
       setSignupIndexNumber(json.data.normalizedIndex);
+      setSignupEmail(`${json.data.normalizedIndex}@st.upsa.edu.gh`);
       setIndexVerifiedBadge(
         json.data.verificationMode === 'external_api' || json.data.verificationMode === 'api_key_ready'
           ? `Verified via UPSA Index API (${json.data.normalizedIndex})`
@@ -1040,48 +1031,6 @@ export function PulseApp() {
       );
     } else {
       setAuthError(json.error?.message ?? 'Could not verify UPSA index number.');
-    }
-  };
-
-  const handleCheckUsernameAvailability = async () => {
-    const raw = signupUsername.trim();
-    if (!raw) {
-      setUsernameTakenError(null);
-      return;
-    }
-    if (raw.length < 3) {
-      setUsernameTakenError('Username must be at least 3 characters.');
-      return;
-    }
-    if (raw.length > 24) {
-      setUsernameTakenError('Username cannot exceed 24 characters.');
-      return;
-    }
-    if (!/^[a-zA-Z0-9_]+$/.test(raw)) {
-      setUsernameTakenError('Username can only contain letters, numbers, and underscores.');
-      return;
-    }
-    try {
-      const res = await fetch('/api/auth/otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          step: 'check_username',
-          username: raw,
-        }),
-      });
-      const json = await res.json();
-      if (res.ok && json.success) {
-        if (!json.data.available) {
-          setUsernameTakenError(
-            json.data.reason ?? 'This username is already taken. Please choose another username.'
-          );
-        } else {
-          setUsernameTakenError(null);
-        }
-      }
-    } catch {
-      // ignore
     }
   };
 
@@ -1125,9 +1074,6 @@ export function PulseApp() {
       });
       const json = await res.json();
       if (res.ok && json.success) {
-        if (json.data?.userId) {
-          setSessionUserCookie(json.data.userId);
-        }
         if (json.data?.deviceStatus === 'pending') {
           setPendingDeviceModalOpen(true);
         }
@@ -1170,9 +1116,6 @@ export function PulseApp() {
       });
       const json = await res.json();
       if (res.ok && json.success) {
-        if (json.data?.userId) {
-          setSessionUserCookie(json.data.userId);
-        }
         if (json.data?.deviceStatus === 'pending') {
           setPendingDeviceModalOpen(true);
         }
@@ -1184,59 +1127,6 @@ export function PulseApp() {
         void loadMeAndAlerts();
       } else {
         setAuthError(json.error?.message ?? 'Invalid UPSA index number, username, or password.');
-      }
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-
-  const handleContinueWithGoogle = async () => {
-    setAuthError(null);
-    const candidateIndex =
-      signupIndexNumber.trim() || loginIdentifier.trim() || '10284999';
-    const candidateUsername =
-      signupUsername.trim() ||
-      (loginIdentifier.trim() && !/^\d+$/.test(loginIdentifier.trim())
-        ? loginIdentifier.trim()
-        : `upsa_${candidateIndex.slice(-4)}`);
-    const candidateEmail =
-      signupEmail.trim() || `${candidateUsername.toLowerCase()}@st.upsa.edu.gh`;
-
-    setAuthSubmitting(true);
-    try {
-      // Attempt Supabase OAuth if configured in browser, or complete instant Google Student verification
-      const supabase = createSupabaseBrowserClient();
-      void supabase;
-      const res = await fetch('/api/auth/otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          step: 'google',
-          googleEmail: candidateEmail,
-          username: candidateUsername,
-          indexNumber: candidateIndex,
-          adultConfirmed: true,
-          termsAccepted: true,
-          privacyAccepted: true,
-          guidelinesAccepted: true,
-        }),
-      });
-      const json = await res.json();
-      if (res.ok && json.success) {
-        if (json.data?.userId) {
-          setSessionUserCookie(json.data.userId);
-        }
-        setComposeStatusToast(
-          `Connected with Google as @${json.data.username} (Index ${json.data.indexNumber ?? 'verified'}).`
-        );
-        setOnboardingStage('none');
-        void loadFeed();
-        void loadMeAndAlerts();
-      } else {
-        setAuthError(
-          json.error?.message ??
-            'Enter your UPSA Student Index Number above before continuing with Google.'
-        );
       }
     } finally {
       setAuthSubmitting(false);
@@ -1300,29 +1190,6 @@ export function PulseApp() {
       }
     } finally {
       setAuthSubmitting(false);
-    }
-  };
-
-  const handleRequestOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    const res = await fetch('/api/auth/otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        step: 'request_otp',
-        email: signupEmail,
-        adultConfirmed,
-        termsAccepted: termsChecked,
-        privacyAccepted: privacyChecked,
-        guidelinesAccepted: guidelinesChecked,
-      }),
-    });
-    const json = await res.json();
-    if (res.ok && json.success) {
-      setOnboardingStage('otp');
-    } else {
-      setAuthError(json.error?.message ?? 'Check your UPSA email and consent boxes.');
     }
   };
 
@@ -1448,7 +1315,7 @@ export function PulseApp() {
   const composeCharRemaining = 500 - composeBody.length;
   const replyCharRemaining = 300 - replyBody.length;
 
-  // Dedicated Onboarding / Outside-Zone Screens (App Flow F1, F2, F3)
+  // Onboarding & Gateway Views
   if (onboardingStage === 'welcome') {
     const welcomeCards = [
       {
@@ -1470,10 +1337,13 @@ export function PulseApp() {
       <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden bg-[var(--surface-app)] text-[var(--text-primary)] flex flex-col justify-between px-4 py-8">
         <div className="flex items-center justify-between">
           <div className="inline-flex items-center gap-2.5 font-bold text-[18px] text-[var(--text-heading)]">
-            <img
+            <Image
               src="/images/upsa-pulse-emblem.jpg"
               alt="UPSA Pulse Emblem"
+              width={36}
+              height={36}
               className="w-9 h-9 rounded-[8px] object-cover border border-[#D9A21B]/40"
+              priority
             />
             <span>UPSA Pulse</span>
           </div>
@@ -1494,10 +1364,13 @@ export function PulseApp() {
         </div>
 
         <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] overflow-hidden my-auto">
-          <img
+          <Image
             src="/images/upsa-pulse-campus-hero.jpg"
             alt="UPSA Campus and Hostel Pulse Network"
+            width={640}
+            height={224}
             className="w-full h-48 sm:h-56 object-cover border-b border-[var(--border-color)]"
+            priority
           />
           <div className="p-6 space-y-4">
             <div className="text-[13px] font-semibold text-[#8A6200]">
@@ -2362,15 +2235,18 @@ export function PulseApp() {
 
   return (
     <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden flex flex-col bg-[var(--surface-app)] text-[var(--text-primary)] pb-20 relative">
-      {/* Top Bar (navy-900 #0B2A5B) — Design Brief Section 4 */}
+      {/* Top Header */}
       <header className="sticky top-0 z-30 bg-[#0B2A5B] text-white border-b border-[#1C4A8F]">
         <div className="max-w-[640px] mx-auto px-4 pt-3 pb-0">
           <div className="flex items-center justify-between gap-2 pb-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <img
+              <Image
                 src="/images/upsa-pulse-emblem.jpg"
                 alt="UPSA Pulse"
+                width={32}
+                height={32}
                 className="w-8 h-8 rounded-[6px] object-cover border border-[#D9A21B]/50 shrink-0"
+                priority
               />
               <div className="truncate">
                 <span className="font-bold text-[17px] tracking-tight">UPSA Pulse</span>
@@ -2642,7 +2518,7 @@ export function PulseApp() {
         </div>
       </header>
 
-      {/* Offline Banner — Design Brief Section 6 */}
+      {/* Offline Banner */}
       {isOffline && (
         <div
           role="status"
@@ -2653,7 +2529,7 @@ export function PulseApp() {
         </div>
       )}
 
-      {/* Rate Limited Banner — Design Brief Section 6 */}
+      {/* Rate Limited Banner */}
       {rateLimitBanner && (
         <div
           role="alert"
@@ -2721,7 +2597,7 @@ export function PulseApp() {
           </div>
         )}
 
-        {/* Realtime New-Posts Pill — FEED-3 & Design Brief Section 7 */}
+        {/* Realtime New Posts Pill */}
         {activeTab === 'feed' && !activeThreadId && newPostsCount > 0 && (
           <div className="flex justify-center">
             <button
@@ -2741,7 +2617,7 @@ export function PulseApp() {
           </div>
         )}
 
-        {/* THREAD VIEW (Screen Inventory: Thread, F6, F8) */}
+        {/* Thread View */}
         {activeThreadId && threadData ? (
           <section aria-label="Conversation thread" className="space-y-4">
             <button
@@ -2930,7 +2806,7 @@ export function PulseApp() {
               </div>
             </article>
 
-            {/* Flat Replies List — Design Brief Section 4.2 */}
+            {/* Replies List */}
             <div className="space-y-3">
               <h2 className="text-[15px] font-semibold text-[var(--text-heading)]">
                 Replies ({threadData.replies.length})
@@ -3132,7 +3008,7 @@ export function PulseApp() {
                 </button>
               </div>
             ) : posts.length === 0 ? (
-              /* Empty Feed State — Design Brief Section 6 & 9 */
+              /* Empty Feed State */
               <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-6 space-y-4">
                 <h2 className="text-[18px] font-bold text-[var(--text-heading)]">
                   Nothing here yet. Ask something, someone near you probably knows.
@@ -3168,7 +3044,7 @@ export function PulseApp() {
                     key={post.id}
                     className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-3.5 flex gap-3"
                   >
-                    {/* Left Vote Rail (44px wide vertical stack) — Design Brief Section 4.1 */}
+                    {/* Vote Rail */}
                     <div className="w-[44px] shrink-0 flex flex-col items-center justify-start gap-1">
                       <button
                         type="button"
@@ -3387,7 +3263,7 @@ export function PulseApp() {
             )}
           </section>
         ) : activeTab === 'channels' ? (
-          /* CHANNELS TAB — Design Brief Section 2.3 & 5 */
+          /* Channels Tab */
           <section aria-label="Campus channels" className="space-y-3">
             <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
               Channels
@@ -3930,9 +3806,11 @@ export function PulseApp() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
-                  <img
+                  <Image
                     src="/images/upsa-pulse-emblem.jpg"
                     alt="UPSA Pulse App Crest"
+                    width={56}
+                    height={56}
                     className="w-14 h-14 rounded-[10px] object-cover shrink-0 border border-[#D9A21B]/40"
                   />
                   <div className="text-[12px]">
@@ -3941,9 +3819,11 @@ export function PulseApp() {
                   </div>
                 </div>
                 <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
-                  <img
+                  <Image
                     src="/splash/apple-splash-750x1334.png"
                     alt="UPSA Pulse Splash Screen"
+                    width={40}
+                    height={56}
                     className="w-10 h-14 rounded-[6px] object-cover shrink-0 border border-[#0B2A5B]"
                   />
                   <div className="text-[12px]">
@@ -3952,9 +3832,11 @@ export function PulseApp() {
                   </div>
                 </div>
                 <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
-                  <img
+                  <Image
                     src="/images/upsa-pulse-campus-hero.jpg"
                     alt="UPSA Campus Hero Illustration"
+                    width={64}
+                    height={56}
                     className="w-16 h-14 rounded-[6px] object-cover shrink-0 border border-[var(--border-color)]"
                   />
                   <div className="text-[12px]">
@@ -3965,7 +3847,7 @@ export function PulseApp() {
               </div>
             </div>
 
-            {/* Legal Pages Navigation — LEGAL-1 */}
+            {/* Legal Pages Navigation */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
               <h2 className="text-[16px] font-bold text-[var(--text-heading)]">
                 Legal, Safety &amp; Compliance Documents
@@ -4012,7 +3894,7 @@ export function PulseApp() {
               </div>
             </div>
 
-            {/* Danger Zone: Account Deletion — ACCT-1, F12 & Design Brief Section 9 */}
+            {/* Account Deletion */}
             <form
               onSubmit={handleDeleteAccount}
               className="bg-[var(--surface-card)] border-2 border-[#A32121] rounded-[8px] p-5 space-y-3"
@@ -4087,7 +3969,7 @@ export function PulseApp() {
         )}
       </main>
 
-      {/*Full-Screen Compose Sheet — Design Brief Section 4.3 & F5 */}
+      {/* Compose Sheet */}
       {composeOpen && (
         <div
           role="dialog"
@@ -4231,7 +4113,7 @@ export function PulseApp() {
                 </div>
               </div>
 
-              {/* Mandatory Honesty Reminder — Design Brief Section 4.3 & 9 */}
+              {/* Community Guidelines Notice */}
               <div className="p-3 rounded-[8px] bg-[#EEF2F8] text-[#1B2433] text-[13px] leading-[18px] flex items-start gap-2">
                 <ShieldAlert className="w-4 h-4 text-[#0B2A5B] shrink-0 mt-0.5" aria-hidden="true" />
                 <span>
@@ -4268,7 +4150,7 @@ export function PulseApp() {
         </div>
       )}
 
-      {/* Report Sheet — Design Brief Section 5 & F9 */}
+      {/* Report Sheet */}
       {reportTarget && (
         <div
           role="dialog"
@@ -4493,7 +4375,7 @@ export function PulseApp() {
         </div>
       )}
 
-      {/* Bottom Navigation (5 items: Feed, Channels, Compose in Gold #D9A21B, Alerts, Me) — Design Brief Section 4 */}
+      {/* Bottom Navigation */}
       <nav
         aria-label="Primary bottom navigation"
         className="fixed bottom-0 left-0 right-0 z-30 bg-[var(--surface-card)] border-t border-[var(--border-color)]"

@@ -342,7 +342,7 @@ export const DEFAULT_KEYWORD_RULES: KeywordRuleConfig[] = [
 export const DEFAULT_ALLOWED_DOMAINS = ['upsa.edu.gh', 'st.upsa.edu.gh'];
 
 /**
- * TDD Section 7:
+ * Computes decay-weighted hot ranking score for posts:
  * hot_score = (max(score, 0) + 1) / (age_hours + 2)^1.5
  */
 export function computeHotScore(score: number, createdAt: Date, now: Date = new Date()): number {
@@ -354,7 +354,7 @@ export function computeHotScore(score: number, createdAt: Date, now: Date = new 
 }
 
 /**
- * AUTH-1: Only addresses on an admin-maintained allow-list of UPSA domains are accepted.
+ * Validates that an email belongs to an approved university domain.
  */
 export function isAllowedEmailDomain(
   email: string,
@@ -497,9 +497,8 @@ export function verifyPassword(password: string, storedHash: string, pepper: str
 }
 
 /**
- * TDD Section 4:
- * Server rejects readings with accuracy worse than the zone limit (150 m) and tests point against active zone polygon.
- * Never returns or logs coordinates.
+ * Evaluates whether a geolocation coordinate falls within an authorized zone boundary.
+ * Enforces accuracy threshold (<= 150m) and never persists raw coordinates.
  */
 export function verifyZonePoint(
   reading: { lat: number; lng: number; accuracy: number },
@@ -596,8 +595,8 @@ export function screenContentText(
 }
 
 /**
- * TDD Section 5 & Backend Schema Section 10:
- * HMAC of a device token with a server pepper; the raw token never lives in the database.
+ * Generates an HMAC-SHA256 digest of a device identifier using a server pepper.
+ * Ensures raw hardware tokens are never stored in the database.
  */
 export function hashDeviceToken(rawToken: string, pepper: string): string {
   const encoder = new TextEncoder();
@@ -627,8 +626,7 @@ export function hashDeviceToken(rawToken: string, pepper: string): string {
 }
 
 /**
- * REPLY-1 & Design Brief Section 4.2:
- * Per-thread alias formatting: 0 = OP, 1..n = Student 1..n
+ * Thread-scoped alias formatting: 0 = OP, 1..n = Student 1..n
  */
 export function formatThreadAlias(aliasNo: number): string {
   return aliasNo === 0 ? 'OP' : `Student ${aliasNo}`;
@@ -644,9 +642,7 @@ export interface ThreadGlyph {
 }
 
 /**
- * Design Brief Section 4.2:
- * A small geometric glyph, generated from the alias number within that thread only, sits beside the chip.
- * Abstract shapes in navy and gold; no faces and no stable colours across threads, so users cannot be linked between threads.
+ * Generates an ephemeral visual glyph for a thread alias to prevent cross-thread correlation.
  */
 export function generateThreadGlyph(postId: string, aliasNo: number): ThreadGlyph {
   const encoder = new TextEncoder();
@@ -690,8 +686,7 @@ export function generateRandomStudentUsername(): string {
 }
 
 /**
- * TDD Section 9:
- * Scrub coordinates, emails, device tokens, and message text before sending any error to Sentry or logs.
+ * Scrubs telemetry and error payloads to eliminate PII, credentials, and coordinates.
  */
 export function scrubSensitivePayload(input: Record<string, unknown>): Record<string, unknown> {
   const forbiddenKeys = new Set([

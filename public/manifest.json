@@ -2,7 +2,7 @@
   "id": "/",
   "name": "UPSA Pulse",
   "short_name": "Pulse",
-  "description": "Location-gated, pseudonymous campus feed for verified UPSA students across Main Campus, Hostel A, Hostel B, and Hostel C.",
+  "description": "Location-gated, pseudonymous campus feed for verified UPSA students across Main Campus, Hostels, Private Hostels, and Vacation Lounge.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

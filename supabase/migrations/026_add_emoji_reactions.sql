@@ -54,3 +54,4 @@ begin
 end $$;
 
 grant execute on function feed.toggle_post_reaction(uuid, text) to authenticated;
+

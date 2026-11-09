@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://upsapulse.org'),
   title: 'UPSA Pulse · Campus Feed',
   description:
-    'Location-gated, pseudonymous campus feed for verified UPSA students across Main Campus, Hostel A, Hostel B, and Hostel C.',
+    'Location-gated, pseudonymous campus feed for verified UPSA students across Main Campus, Hostels, Private Hostels, and Vacation Lounge.',
   applicationName: 'UPSA Pulse',
   manifest: '/manifest.json',
   appleWebApp: {

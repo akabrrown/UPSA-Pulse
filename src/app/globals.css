@@ -4,7 +4,7 @@
 :root {
   --font-figtree: 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* Primitive tokens — Design Brief Section 2.1 */
+  /* Core Tokens */
   --navy-950: #071C3D;
   --navy-900: #0B2A5B;
   --navy-700: #1C4A8F;
@@ -21,7 +21,7 @@
   --danger: #A32121;
   --success: #1F7A4D;
 
-  /* Semantic tokens (Light mode) — Design Brief Section 2.2 */
+  /* Semantic Theme Tokens (Light) */
   --surface-app: var(--bg);
   --surface-card: var(--white);
   --surface-subtle: var(--navy-50);
@@ -41,7 +41,7 @@
 }
 
 .dark {
-  /* Semantic tokens (Dark mode) — Design Brief Section 2.2 */
+  /* Semantic Theme Tokens (Dark) */
   --surface-app: #0C1424;
   --surface-card: #111A2B;
   --surface-subtle: #071C3D;
@@ -94,13 +94,13 @@ textarea,
   -webkit-user-select: text;
 }
 
-/* Visible gold focus ring with 2px navy offset — Design Brief Section 2.2 & 8 */
+/* Accessible focus indicator */
 *:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
-/* Vote press 120ms scale and fill change — Design Brief Section 7 */
+/* Micro-interactions */
 .vote-btn {
   transition: transform 120ms ease-out, background-color 120ms ease-out, color 120ms ease-out;
 }
@@ -108,7 +108,7 @@ textarea,
   transform: scale(0.94);
 }
 
-/* New-posts pill slides in once, no bounce — Design Brief Section 7 */
+/* Feed update indicator */
 @keyframes slideInOnce {
   from {
     opacity: 0;
@@ -124,7 +124,7 @@ textarea,
   animation: slideInOnce 160ms ease-out forwards;
 }
 
-/* Respect prefers-reduced-motion by removing all transforms — Design Brief Section 7 */
+/* Accessible motion preferences */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,

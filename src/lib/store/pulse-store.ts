@@ -1241,7 +1241,7 @@ export function applyModerationActionInStore(
     targetAuthorId = reply.authorId;
   }
 
-  // App Flow Section 6: Moderator cannot moderate content from threads they participated in
+  // Prevent moderators from acting on threads where they participated
   const aliasMap = state.threadAliases.get(postId);
   if (aliasMap?.has(actorUserId)) {
     throw new Error('conflict_of_interest');
@@ -1444,7 +1444,7 @@ export function deleteAccountInStore(
     throw new Error('forbidden');
   }
 
-  // ACCT-1 & F12: Null author_id on posts and replies so threads remain coherent with no link to the user
+  // Disassociate author references while maintaining thread coherence
   for (const post of state.posts.values()) {
     if (post.authorId === userId) {
       post.authorId = null;
@@ -1892,7 +1892,7 @@ export function registerSignUpAndDeviceInStore(input: {
     return { userId: profile.id, deviceStatus: 'trusted', email: profile.email };
   }
 
-  // AUTH-3 & F2: Second device becomes pending until approved from main device or email
+  // Unrecognized hardware tokens require approval before elevation to trusted status
   state.devices.push({
     id: crypto.randomUUID(),
     userId: profile.id,

@@ -619,13 +619,13 @@ export default function AdminQueuePage() {
           )}
         </section>
 
-        {/* User Case Lookup by Post ID / Thread Alias (No Email Exposed) — ADMIN-1 */}
+        {/* User Case Lookup by Post ID / Thread Alias */}
         <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4">
           <div className="flex items-center gap-2">
             <Search className="w-5 h-5 text-[#0B2A5B]" aria-hidden="true" />
             <div>
               <h2 className="text-[18px] font-bold text-[var(--text-heading)]">
-                Case Lookup by Post ID &amp; Thread Alias (ADMIN-1)
+                Case Lookup by Post ID &amp; Thread Alias
               </h2>
               <p className="text-[13px] text-[var(--text-secondary)]">
                 Inspect account standing and prior moderation actions for a post or thread alias without exposing the student&apos;s email address.
@@ -712,12 +712,12 @@ export default function AdminQueuePage() {
           </div>
         </section>
 
-        {/* Zone, Channel & Domain Management — ADMIN-1 */}
+        {/* Zone, Channel & Domain Management */}
         <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-5">
           <div className="flex items-center gap-2">
             <Sliders className="w-5 h-5 text-[#0B2A5B]" aria-hidden="true" />
             <h2 className="text-[18px] font-bold text-[var(--text-heading)]">
-              Campus Zone, Channels, Keyword Rules &amp; Domains (ADMIN-1)
+              Campus Zones, Channels, Keyword Rules &amp; Domains
             </h2>
           </div>
 
