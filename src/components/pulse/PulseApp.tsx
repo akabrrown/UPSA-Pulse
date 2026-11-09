@@ -294,7 +294,6 @@ export function PulseApp() {
 
   // Background feed worker
   const feedWorkerRef = useRef<Worker | null>(null);
-  const [liveSyncActive, setLiveSyncActive] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -493,7 +492,6 @@ export function PulseApp() {
     try {
       worker = new Worker('/feed-worker.js');
       feedWorkerRef.current = worker;
-      setLiveSyncActive(true);
     } catch {
       return;
     }
@@ -558,7 +556,6 @@ export function PulseApp() {
       worker.postMessage({ type: 'STOP' });
       worker.terminate();
       feedWorkerRef.current = null;
-      setLiveSyncActive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2490,16 +2487,6 @@ export function PulseApp() {
               </div>
 
               <div className="flex items-center gap-2">
-                {liveSyncActive && (
-                  <div
-                    title="Live background feed worker active"
-                    className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#133875] text-[#DCE6F5] text-[11px] font-semibold border border-[#2C599D]"
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Live Updates</span>
-                  </div>
-                )}
-
                 <button
                   type="button"
                   onClick={() => setAsksOnly(!asksOnly)}

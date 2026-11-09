@@ -60,20 +60,38 @@
   --focus-offset: #0C1424;
 }
 
-* {
+/* Make scrollbars invisible application-wide while preserving fluid native scrolling */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html,
+body,
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+html {
+  width: 100%;
+  min-height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   width: 100%;
-  max-width: 100vw;
-  min-height: 100dvh;
+  min-height: 100%;
   overflow-x: hidden;
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
-  overscroll-behavior-x: none;
-  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   -webkit-tap-highlight-color: transparent;
   background-color: var(--surface-app);
