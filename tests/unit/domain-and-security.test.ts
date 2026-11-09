@@ -306,5 +306,98 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
       expect(blocked.retryAfterSeconds).toBeLessThanOrEqual(10);
     });
   });
+
+  describe('Deleted Messages and Users Security Audit Archive (Ghana DPA Act 843)', () => {
+    const adminUserId = '44444444-4444-4444-8444-444444444444';
+    const studentUserId = '11111111-1111-4111-8111-111111111111';
+
+    beforeEach(async () => {
+      const { resetPulseStoreForTests, verifyUserZoneInStore } = await import('@/lib/store/pulse-store');
+      resetPulseStoreForTests();
+      verifyUserZoneInStore(studentUserId, { lat: 5.6605, lng: -0.1662, accuracy: 20 });
+    });
+
+    it('archives deleted posts into deleted_messages_audit with original body and author', async () => {
+      const { createPostInStore, deleteOwnPostInStore, getSecurityAuditLogsFromStore } = await import(
+        '@/lib/store/pulse-store'
+      );
+
+      const post = createPostInStore(studentUserId, {
+        channelId: 1,
+        kind: 'post',
+        body: 'Audit Test: This post will be deleted for security testing.',
+      });
+
+      deleteOwnPostInStore(studentUserId, post.id, 'author_requested_removal');
+
+      const audit = getSecurityAuditLogsFromStore(adminUserId, { type: 'deleted_messages' });
+      expect(audit.deletedMessages.length).toBeGreaterThanOrEqual(1);
+
+      const archived = audit.deletedMessages.find((m) => m.originalId === post.id);
+      expect(archived).toBeDefined();
+      expect(archived?.messageType).toBe('post');
+      expect(archived?.authorId).toBe(studentUserId);
+      expect(archived?.body).toContain('Audit Test: This post will be deleted');
+      expect(archived?.deletionReason).toBe('author_requested_removal');
+      expect(archived?.deletedBy).toBe(studentUserId);
+      expect(archived?.deletedAt).toBeDefined();
+
+      // Ensure system audit log captured the event
+      const allAudit = getSecurityAuditLogsFromStore(adminUserId, { type: 'system' });
+      expect(allAudit.systemAuditLogs.some((l) => l.event === 'post_deleted_by_author')).toBe(true);
+    });
+
+    it('archives moderator removed posts and replies with exact violation reason', async () => {
+      const { createPostInStore, applyModerationActionInStore, getSecurityAuditLogsFromStore } =
+        await import('@/lib/store/pulse-store');
+
+      const post = createPostInStore(studentUserId, {
+        channelId: 1,
+        kind: 'post',
+        body: 'Post to be removed by moderator for exam question sharing.',
+      });
+
+      applyModerationActionInStore(adminUserId, {
+        targetType: 'post',
+        targetId: post.id,
+        action: 'remove',
+        reason: 'Violation of Academic Integrity: leaking exam question',
+      });
+
+      const audit = getSecurityAuditLogsFromStore(adminUserId, { type: 'deleted_messages' });
+      const archived = audit.deletedMessages.find((m) => m.originalId === post.id);
+      expect(archived).toBeDefined();
+      expect(archived?.deletedBy).toBe(adminUserId);
+      expect(archived?.deletionReason).toContain('moderator_removed');
+      expect(archived?.deletionReason).toContain('Violation of Academic Integrity');
+    });
+
+    it('archives deleted user accounts into deleted_users_audit before purging data', async () => {
+      const { deleteAccountInStore, getSecurityAuditLogsFromStore } = await import(
+        '@/lib/store/pulse-store'
+      );
+
+      deleteAccountInStore(studentUserId, {
+        confirmationText: 'DELETE',
+        otp: '123456',
+        reason: 'Student graduated and requested account deletion',
+      });
+
+      const audit = getSecurityAuditLogsFromStore(adminUserId, { type: 'deleted_users' });
+      expect(audit.deletedUsers.length).toBeGreaterThanOrEqual(1);
+
+      const archivedUser = audit.deletedUsers.find((u) => u.userId === studentUserId);
+      expect(archivedUser).toBeDefined();
+      expect(archivedUser?.username).toBe('efua_upsa');
+      expect(archivedUser?.deletedBy).toBe(studentUserId);
+      expect(archivedUser?.deletionReason).toBe('Student graduated and requested account deletion');
+      expect(archivedUser?.deletedAt).toBeDefined();
+
+      // Ensure unauthorized user cannot read security audit records
+      expect(() => getSecurityAuditLogsFromStore('33333333-3333-4333-8333-333333333333')).toThrow(
+        'forbidden'
+      );
+    });
+  });
 });
 

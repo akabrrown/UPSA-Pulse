@@ -220,6 +220,45 @@ export interface DeviceRecord {
   lastSeenAt: string;
 }
 
+export interface DeletedMessageAuditRecord {
+  id: number;
+  messageType: 'post' | 'reply';
+  originalId: string;
+  postId: string;
+  channelId?: number | null;
+  zoneId?: number | null;
+  authorId?: string | null;
+  body: string;
+  originalCreatedAt: string;
+  deletedBy?: string | null;
+  deletionReason: string;
+  deletedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface DeletedUserAuditRecord {
+  id: number;
+  userId: string;
+  username: string;
+  indexNumberHash?: string | null;
+  emailHash?: string | null;
+  role: string;
+  reputation: number;
+  accountCreatedAt?: string | null;
+  deletedBy?: string | null;
+  deletionReason: string;
+  deletedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SecurityAuditRecord {
+  id: number;
+  actorId: string | null;
+  event: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
 interface PulseState {
   zones: ZonePolygonConfig[];
   channels: ChannelRecord[];
@@ -238,7 +277,9 @@ interface PulseState {
   reports: ReportRecord[];
   moderationActions: ModerationActionRecord[];
   unmaskRequests: UnmaskRequestRecord[];
-  auditLogs: Array<{ id: number; actorId: string | null; event: string; metadata: Record<string, unknown>; createdAt: string }>;
+  auditLogs: SecurityAuditRecord[];
+  deletedMessagesAudit: DeletedMessageAuditRecord[];
+  deletedUsersAudit: DeletedUserAuditRecord[];
   notifications: NotificationRecord[];
   pushSubscriptions: Array<{ id: number; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }>;
   dataRequests: DataRequestRecord[];
@@ -513,6 +554,8 @@ function createInitialState(): PulseState {
     moderationActions: [],
     unmaskRequests: [],
     auditLogs: [],
+    deletedMessagesAudit: [],
+    deletedUsersAudit: [],
     notifications: [],
     pushSubscriptions: [],
     dataRequests: [],
@@ -936,12 +979,41 @@ export function createReplyInStore(
   };
 }
 
-export function deleteOwnPostInStore(userId: string, postId: string): void {
+export function deleteOwnPostInStore(userId: string, postId: string, reason = 'user_deleted'): void {
   const post = state.posts.get(postId);
   if (!post || post.authorId !== userId) {
     throw new Error('forbidden');
   }
   post.status = 'removed';
+  const nowIso = new Date().toISOString();
+
+  state.deletedMessagesAudit.unshift({
+    id: nextId(),
+    messageType: 'post',
+    originalId: post.id,
+    postId: post.id,
+    channelId: post.channelId,
+    zoneId: post.zoneId,
+    authorId: post.authorId,
+    body: post.body,
+    originalCreatedAt: post.createdAt,
+    deletedBy: userId,
+    deletionReason: reason,
+    deletedAt: nowIso,
+    metadata: {
+      score: post.score,
+      replyCount: post.replyCount,
+      kind: post.kind,
+    },
+  });
+
+  state.auditLogs.unshift({
+    id: nextId(),
+    actorId: userId,
+    event: 'post_deleted_by_author',
+    metadata: { postId: post.id, channelId: post.channelId, reason },
+    createdAt: nowIso,
+  });
 }
 
 export function markAnswerInStore(userId: string, replyId: string): void {
@@ -1270,9 +1342,53 @@ export function applyModerationActionInStore(
     }
   } else if (input.action === 'remove') {
     if (input.targetType === 'post') {
-      state.posts.get(input.targetId)!.status = 'removed';
+      const targetPost = state.posts.get(input.targetId);
+      if (targetPost) {
+        targetPost.status = 'removed';
+        targetPost.hiddenReason = cleanReason;
+        state.deletedMessagesAudit.unshift({
+          id: nextId(),
+          messageType: 'post',
+          originalId: targetPost.id,
+          postId: targetPost.id,
+          channelId: targetPost.channelId,
+          zoneId: targetPost.zoneId,
+          authorId: targetPost.authorId,
+          body: targetPost.body,
+          originalCreatedAt: targetPost.createdAt,
+          deletedBy: actorUserId,
+          deletionReason: `moderator_removed:${cleanReason}`,
+          deletedAt: nowIso,
+          metadata: {
+            score: targetPost.score,
+            replyCount: targetPost.replyCount,
+            kind: targetPost.kind,
+          },
+        });
+      }
     } else {
-      state.replies.get(input.targetId)!.status = 'removed';
+      const targetReply = state.replies.get(input.targetId);
+      if (targetReply) {
+        targetReply.status = 'removed';
+        state.deletedMessagesAudit.unshift({
+          id: nextId(),
+          messageType: 'reply',
+          originalId: targetReply.id,
+          postId: targetReply.postId,
+          channelId: null,
+          zoneId: null,
+          authorId: targetReply.authorId,
+          body: targetReply.body,
+          originalCreatedAt: targetReply.createdAt,
+          deletedBy: actorUserId,
+          deletionReason: `moderator_removed:${cleanReason}`,
+          deletedAt: nowIso,
+          metadata: {
+            aliasNo: targetReply.aliasNo,
+            score: targetReply.score,
+          },
+        });
+      }
     }
     for (const r of state.reports) {
       if (r.targetType === input.targetType && r.targetId === input.targetId && r.status === 'open') {
@@ -1308,6 +1424,20 @@ export function applyModerationActionInStore(
     createdAt: nowIso,
   };
   state.moderationActions.push(record);
+
+  state.auditLogs.unshift({
+    id: nextId(),
+    actorId: actorUserId,
+    event: `moderation_${input.action}`,
+    metadata: {
+      actionId: record.id,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      targetUserRef: targetAuthorId,
+      reason: cleanReason,
+    },
+    createdAt: nowIso,
+  });
 
   if (targetAuthorId) {
     state.notifications.unshift({
@@ -1485,12 +1615,45 @@ export function deleteAccountInStore(
     }
   }
 
+  const deletedAt = new Date().toISOString();
+
+  // Archive deleted user for institutional and legal security audit (DPA Act 843)
+  const role = profile.isAdmin ? 'admin' : profile.canModerate ? 'moderator' : 'student';
+  const username = profile.username ?? 'anonymous_student';
+  state.deletedUsersAudit.unshift({
+    id: nextId(),
+    userId: profile.id,
+    username,
+    indexNumberHash: profile.indexNumber ? hashDeviceToken(profile.indexNumber, 'upsa_audit') : null,
+    emailHash: hashDeviceToken(profile.email.toLowerCase(), 'upsa_audit'),
+    role,
+    reputation: profile.karma ?? 0,
+    accountCreatedAt: profile.createdAt,
+    deletedBy: userId,
+    deletionReason: input.reason ?? 'user_self_deleted',
+    deletedAt,
+    metadata: {
+      zoneId: profile.zoneId,
+      status: profile.status,
+    },
+  });
+
+  state.auditLogs.unshift({
+    id: nextId(),
+    actorId: userId,
+    event: 'account_deleted',
+    metadata: {
+      userId,
+      reason: input.reason ?? null,
+      username: profile.username,
+    },
+    createdAt: deletedAt,
+  });
+
   state.devices = state.devices.filter((d) => d.userId !== userId);
   state.notifications = state.notifications.filter((n) => n.userId !== userId);
   state.pushSubscriptions = state.pushSubscriptions.filter((s) => s.userId !== userId);
   state.profiles.delete(userId);
-
-  const deletedAt = new Date().toISOString();
   state.deletionLog.set(userId, deletedAt);
 
   return { deletedAt };
@@ -2400,5 +2563,60 @@ export function confirmPasswordResetInStore(input: {
     userId: profile.id,
     username: profile.username ?? null,
     indexNumber: profile.indexNumber ?? null,
+  };
+}
+
+export function recordSecurityAuditEventInStore(
+  actorUserId: string | null,
+  event: string,
+  metadata: Record<string, unknown> = {}
+): SecurityAuditRecord {
+  const record: SecurityAuditRecord = {
+    id: nextId(),
+    actorId: actorUserId,
+    event,
+    metadata,
+    createdAt: new Date().toISOString(),
+  };
+  state.auditLogs.unshift(record);
+  return record;
+}
+
+export function getSecurityAuditLogsFromStore(
+  actorUserId: string,
+  filter?: {
+    limit?: number;
+    event?: string;
+    type?: 'all' | 'system' | 'deleted_messages' | 'deleted_users';
+  }
+): {
+  systemAuditLogs: SecurityAuditRecord[];
+  deletedMessages: DeletedMessageAuditRecord[];
+  deletedUsers: DeletedUserAuditRecord[];
+  totalAuditCount: number;
+} {
+  const actor = state.profiles.get(actorUserId);
+  if (!actor || (!actor.isAdmin && !actor.canModerate)) {
+    throw new Error('forbidden');
+  }
+
+  const limit = Math.min(Math.max(filter?.limit ?? 50, 1), 200);
+  let systemLogs = state.auditLogs;
+  if (filter?.event) {
+    const q = filter.event.toLowerCase();
+    systemLogs = systemLogs.filter((l) => l.event.toLowerCase().includes(q));
+  }
+
+  const requestedType = filter?.type ?? 'all';
+  const showSystem = requestedType === 'all' || requestedType === 'system';
+  const showDeletedMessages = requestedType === 'all' || requestedType === 'deleted_messages';
+  const showDeletedUsers = requestedType === 'all' || requestedType === 'deleted_users';
+
+  return {
+    systemAuditLogs: showSystem ? systemLogs.slice(0, limit) : [],
+    deletedMessages: showDeletedMessages ? state.deletedMessagesAudit.slice(0, limit) : [],
+    deletedUsers: showDeletedUsers ? state.deletedUsersAudit.slice(0, limit) : [],
+    totalAuditCount:
+      state.auditLogs.length + state.deletedMessagesAudit.length + state.deletedUsersAudit.length,
   };
 }

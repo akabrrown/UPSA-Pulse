@@ -41,9 +41,11 @@ describe('Backend Schema DDL & Security Invariants (UPSA-Pulse-5-Backend-Schema 
     }
   });
 
-  it('enforces append-only triggers on moderation_actions and audit_logs', () => {
+  it('enforces append-only triggers on moderation_actions, audit_logs, and deleted security archives', () => {
     expect(fullSql).toContain('create trigger moderation_actions_append_only before update or delete on private.moderation_actions');
     expect(fullSql).toContain('create trigger audit_logs_append_only before update or delete on private.audit_logs');
+    expect(fullSql).toContain('create trigger deleted_messages_audit_append_only\n  before update or delete on private.deleted_messages_audit');
+    expect(fullSql).toContain('create trigger deleted_users_audit_append_only\n  before update or delete on private.deleted_users_audit');
   });
 
   it('enforces one trusted device per user and per device_hash via partial unique indexes', () => {

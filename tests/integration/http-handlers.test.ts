@@ -23,6 +23,7 @@ import { POST as postLogout } from '@/app/api/auth/logout/route';
 import { POST as postAppeal, PATCH as patchAppeal } from '@/app/api/appeals/route';
 import { POST as postApproveDevice } from '@/app/api/devices/approve/route';
 import { GET as getAdminLookup } from '@/app/api/admin/lookup/route';
+import { GET as getAdminAudit } from '@/app/api/admin/audit/route';
 import { applyModerationActionInStore } from '@/lib/store/pulse-store';
 import { resetRateLimitsForTests } from '@/lib/domain/pulse-engine';
 
@@ -768,6 +769,35 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
     const meJson = await meRes.json();
     expect(meJson.success).toBe(true);
     expect(meJson.data.profile).toBeNull();
+  });
+
+  it('secures GET /api/admin/audit: allows moderators and rejects unprivileged students', async () => {
+    // 1. Moderator / Admin access
+    const auditRes = await getAdminAudit(
+      makeReq('http://localhost:3000/api/admin/audit?type=all', { userId: moderator })
+    );
+    expect(auditRes.status).toBe(200);
+    const auditJson = await auditRes.json();
+    expect(auditJson.success).toBe(true);
+    expect(Array.isArray(auditJson.data.systemAuditLogs)).toBe(true);
+    expect(Array.isArray(auditJson.data.deletedMessages)).toBe(true);
+    expect(Array.isArray(auditJson.data.deletedUsers)).toBe(true);
+    expect(typeof auditJson.data.totalAuditCount).toBe('number');
+
+    // 2. Filter by type=deleted_messages
+    const delMsgRes = await getAdminAudit(
+      makeReq('http://localhost:3000/api/admin/audit?type=deleted_messages', { userId: moderator })
+    );
+    expect(delMsgRes.status).toBe(200);
+    const delMsgJson = await delMsgRes.json();
+    expect(delMsgJson.success).toBe(true);
+    expect(Array.isArray(delMsgJson.data.deletedMessages)).toBe(true);
+
+    // 3. Regular student access is rejected with 403
+    const forbiddenRes = await getAdminAudit(
+      makeReq('http://localhost:3000/api/admin/audit', { userId: efua })
+    );
+    expect(forbiddenRes.status).toBe(403);
   });
 });
 

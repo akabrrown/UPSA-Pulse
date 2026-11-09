@@ -2,7 +2,22 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Shield, Lock, AlertCircle, CheckCircle2, Search, Scale, Sliders, Plus } from 'lucide-react';
+import {
+  Shield,
+  Lock,
+  AlertCircle,
+  CheckCircle2,
+  Search,
+  Scale,
+  Sliders,
+  Plus,
+  Trash2,
+  UserX,
+  History,
+  Download,
+  RefreshCw,
+  FileText,
+} from 'lucide-react';
 import { ChannelIcon } from '@/components/pulse/ChannelIcon';
 
 interface QueueItem {
@@ -19,6 +34,52 @@ interface QueueItem {
   priority: 'P1' | 'P2';
   createdAt: string;
   conflictOfInterest: boolean;
+}
+
+interface AuditLogItem {
+  id: number;
+  actorId: string | null;
+  event: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+interface DeletedMessageItem {
+  id: number;
+  messageType: 'post' | 'reply';
+  originalId: string;
+  postId: string;
+  channelId?: number | null;
+  zoneId?: number | null;
+  authorId?: string | null;
+  body: string;
+  originalCreatedAt: string;
+  deletedBy?: string | null;
+  deletionReason: string;
+  deletedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+interface DeletedUserItem {
+  id: number;
+  userId: string;
+  username: string;
+  indexNumberHash?: string | null;
+  emailHash?: string | null;
+  role: string;
+  reputation: number;
+  accountCreatedAt?: string | null;
+  deletedBy?: string | null;
+  deletionReason: string;
+  deletedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+interface SecurityAuditData {
+  systemAuditLogs: AuditLogItem[];
+  deletedMessages: DeletedMessageItem[];
+  deletedUsers: DeletedUserItem[];
+  totalAuditCount: number;
 }
 
 interface AdminConfigSummary {
@@ -108,6 +169,39 @@ export default function AdminQueuePage() {
   const [unmaskApproveId, setUnmaskApproveId] = useState<string>('');
   const [unmaskOutcome, setUnmaskOutcome] = useState<string | null>(null);
 
+  // Security & Forensics Audit Trail state (DPA Act 843)
+  const [auditData, setAuditData] = useState<SecurityAuditData | null>(null);
+  const [auditTab, setAuditTab] = useState<'messages' | 'users' | 'system'>('messages');
+  const [auditSearch, setAuditSearch] = useState<string>('');
+  const [auditLoading, setAuditLoading] = useState<boolean>(false);
+
+  const loadAuditData = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const res = await fetch('/api/admin/audit?type=all');
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setAuditData(json.data);
+      }
+    } catch {
+      // Non-fatal audit log fetch error
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  const handleExportAudit = () => {
+    if (!auditData) return;
+    const blob = new Blob([JSON.stringify(auditData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `upsa_pulse_security_audit_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setFeedback('Full security audit package exported successfully (JSON format).');
+  };
+
   useEffect(() => {
     async function verifyAdminAuth() {
       try {
@@ -147,10 +241,11 @@ export default function AdminQueuePage() {
           setMaxAccuracyInput(cJson.data.zones[0].maxAccuracyMeters);
         }
       }
+      void loadAuditData();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadAuditData]);
 
   useEffect(() => {
     if (authChecked && currentUser && (currentUser.isAdmin || currentUser.canModerate)) {
@@ -1285,6 +1380,272 @@ export default function AdminQueuePage() {
           {unmaskOutcome && (
             <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] text-[13px] font-semibold text-[#0B2A5B]">
               {unmaskOutcome}
+            </div>
+          )}
+        </section>
+
+        {/* Security & Forensics Audit Trail Section (DPA Act 843 Statutory Compliance) */}
+        <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <History className="w-5 h-5 text-[#0B2A5B]" aria-hidden="true" />
+              <h2 className="font-bold text-[16px] text-[var(--text-heading)]">
+                Security &amp; Forensics Audit Trail
+              </h2>
+              <span className="px-2 py-0.5 rounded-[4px] bg-[#EEF2F8] text-[#0B2A5B] font-bold text-[12px] border border-[#1C4A8F]">
+                {auditData?.totalAuditCount ?? 0} total records
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void loadAuditData()}
+                disabled={auditLoading}
+                className="min-h-[38px] px-3 rounded-[6px] border border-[var(--border-color)] bg-[var(--surface-subtle)] hover:bg-[var(--surface-card)] text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${auditLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportAudit}
+                disabled={!auditData || auditData.totalAuditCount === 0}
+                className="min-h-[38px] px-3 rounded-[6px] bg-[#0B2A5B] hover:bg-[#133875] text-[#D9A21B] text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Export Audit Package</span>
+              </button>
+            </div>
+          </div>
+
+          <p className="text-[13px] text-[var(--text-secondary)]">
+            Tamper-evident legal audit archive under Ghana Data Protection Act 2012 (Act 843).
+            Stores deleted messages, removed content, account termination snapshots, and administrative access events for institutional safety investigations.
+          </p>
+
+          {/* Sub-tabs for Audit types */}
+          <div className="flex items-center gap-2 border-b border-[var(--border-color)] pb-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setAuditTab('messages')}
+              className={`px-3 py-1.5 rounded-[6px] text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                auditTab === 'messages'
+                  ? 'bg-[#0B2A5B] text-white'
+                  : 'bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Deleted Messages Archive</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-white/20">
+                {auditData?.deletedMessages.length ?? 0}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAuditTab('users')}
+              className={`px-3 py-1.5 rounded-[6px] text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                auditTab === 'users'
+                  ? 'bg-[#0B2A5B] text-white'
+                  : 'bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <UserX className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Deleted Users Archive</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-white/20">
+                {auditData?.deletedUsers.length ?? 0}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAuditTab('system')}
+              className={`px-3 py-1.5 rounded-[6px] text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                auditTab === 'system'
+                  ? 'bg-[#0B2A5B] text-white'
+                  : 'bg-[var(--surface-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>System &amp; Access Log</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[11px] bg-white/20">
+                {auditData?.systemAuditLogs.length ?? 0}
+              </span>
+            </button>
+          </div>
+
+          {/* Search Bar for Audit Records */}
+          <div className="relative">
+            <Search className="w-4 h-4 text-[var(--text-secondary)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+            <input
+              type="text"
+              placeholder="Search audit trail by keyword, ID, author, reason, or event..."
+              value={auditSearch}
+              onChange={(e) => setAuditSearch(e.target.value)}
+              className="w-full min-h-[40px] pl-9 pr-3 rounded-[6px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[13px]"
+            />
+          </div>
+
+          {/* Tab 1: Deleted Messages */}
+          {auditTab === 'messages' && (
+            <div className="space-y-3">
+              {auditData?.deletedMessages && auditData.deletedMessages.length > 0 ? (
+                auditData.deletedMessages
+                  .filter((m) => {
+                    if (!auditSearch.trim()) return true;
+                    const q = auditSearch.toLowerCase();
+                    return (
+                      m.body.toLowerCase().includes(q) ||
+                      m.deletionReason.toLowerCase().includes(q) ||
+                      m.originalId.toLowerCase().includes(q) ||
+                      (m.authorId && m.authorId.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="p-4 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-subtle)] space-y-2.5 text-[13px]"
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2 text-[12px]">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                            msg.messageType === 'post' ? 'bg-[#0B2A5B] text-white' : 'bg-[#D9A21B] text-[#0B2A5B]'
+                          }`}>
+                            {msg.messageType}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-semibold border border-red-200">
+                            {msg.deletionReason}
+                          </span>
+                        </div>
+                        <div className="text-[var(--text-secondary)]">
+                          <span>Deleted: {new Date(msg.deletedAt).toLocaleString()}</span>
+                          <span className="mx-1.5">·</span>
+                          <span>Posted: {new Date(msg.originalCreatedAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-[6px] bg-[var(--surface-card)] border-l-4 border-red-500 font-mono text-[13px] text-[var(--text-primary)] whitespace-pre-wrap break-words">
+                        {msg.body}
+                      </div>
+
+                      <div className="flex items-center justify-between flex-wrap gap-2 text-[11px] text-[var(--text-secondary)]">
+                        <div>
+                          <span>ID: <code>{msg.originalId}</code></span>
+                          {msg.authorId && (
+                            <>
+                              <span className="mx-1.5">·</span>
+                              <span>Author UUID: <code>{msg.authorId}</code></span>
+                            </>
+                          )}
+                        </div>
+                        {msg.deletedBy && (
+                          <div>
+                            <span>Action By: <code>{msg.deletedBy}</code></span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+              ) : (
+                <div className="p-8 rounded-[8px] border border-dashed border-[var(--border-color)] text-center text-[var(--text-secondary)] text-[13px]">
+                  No deleted messages recorded in audit archive yet.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 2: Deleted Users */}
+          {auditTab === 'users' && (
+            <div className="space-y-3">
+              {auditData?.deletedUsers && auditData.deletedUsers.length > 0 ? (
+                auditData.deletedUsers
+                  .filter((u) => {
+                    if (!auditSearch.trim()) return true;
+                    const q = auditSearch.toLowerCase();
+                    return (
+                      u.username.toLowerCase().includes(q) ||
+                      u.userId.toLowerCase().includes(q) ||
+                      u.deletionReason.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((user) => (
+                    <div
+                      key={user.id}
+                      className="p-4 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-subtle)] space-y-2 text-[13px]"
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <UserX className="w-4 h-4 text-red-500" aria-hidden="true" />
+                          <span className="font-bold text-[var(--text-heading)]">@{user.username}</span>
+                          <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-800 text-[11px] font-semibold">
+                            {user.role}
+                          </span>
+                        </div>
+                        <span className="text-[12px] text-[var(--text-secondary)]">
+                          Purged: {new Date(user.deletedAt).toLocaleString()}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-[12px] text-[var(--text-secondary)] flex-wrap">
+                        <span>User UUID: <code>{user.userId}</code></span>
+                        <span>·</span>
+                        <span>Reason: <strong className="text-[var(--text-primary)]">{user.deletionReason}</strong></span>
+                        {user.accountCreatedAt && (
+                          <>
+                            <span>·</span>
+                            <span>Created: {new Date(user.accountCreatedAt).toLocaleDateString()}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))
+              ) : (
+                <div className="p-8 rounded-[8px] border border-dashed border-[var(--border-color)] text-center text-[var(--text-secondary)] text-[13px]">
+                  No deleted accounts recorded in audit archive yet.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: System Access & Activity Log */}
+          {auditTab === 'system' && (
+            <div className="space-y-2">
+              {auditData?.systemAuditLogs && auditData.systemAuditLogs.length > 0 ? (
+                auditData.systemAuditLogs
+                  .filter((l) => {
+                    if (!auditSearch.trim()) return true;
+                    const q = auditSearch.toLowerCase();
+                    return (
+                      l.event.toLowerCase().includes(q) ||
+                      (l.actorId && l.actorId.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((log) => (
+                    <div
+                      key={log.id}
+                      className="px-3 py-2.5 rounded-[6px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center justify-between flex-wrap gap-2 text-[12px]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3.5 h-3.5 text-[#0B2A5B]" aria-hidden="true" />
+                        <code className="font-semibold text-[#0B2A5B]">{log.event}</code>
+                        {log.actorId && (
+                          <span className="text-[var(--text-secondary)]">
+                            by <code>{log.actorId.slice(0, 8)}...</code>
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[var(--text-secondary)]">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+              ) : (
+                <div className="p-8 rounded-[8px] border border-dashed border-[var(--border-color)] text-center text-[var(--text-secondary)] text-[13px]">
+                  No security events recorded in system log yet.
+                </div>
+              )}
             </div>
           )}
         </section>

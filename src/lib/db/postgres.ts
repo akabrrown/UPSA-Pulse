@@ -34,6 +34,11 @@ import {
   getAdminConfigFromStore,
   updateAdminConfigInStore,
   executeUnmaskActionInStore,
+  getSecurityAuditLogsFromStore,
+  recordSecurityAuditEventInStore,
+  type DeletedMessageAuditRecord,
+  type DeletedUserAuditRecord,
+  type SecurityAuditRecord,
   registerSignUpAndDeviceInStore,
   submitAppealInStore,
   decideAppealInStore,
@@ -578,7 +583,43 @@ export async function dbDeleteOwnPost(userId: string, postId: string): Promise<v
     return;
   }
   await withAuthenticatedUser(userId, async (client) => {
+    const postRes = await client.query(
+      `SELECT id, channel_id, zone_id, author_id, body, created_at, score, reply_count, kind
+       FROM private.posts WHERE id = $1::uuid AND author_id = $2::uuid`,
+      [postId, userId]
+    );
+    const post = postRes.rows[0];
+    if (!post) {
+      throw new Error('forbidden');
+    }
+
     await client.query(`SELECT feed.delete_own_post($1::uuid)`, [postId]);
+
+    await client.query(
+      `INSERT INTO private.deleted_messages_audit (
+         message_type, original_id, post_id, channel_id, zone_id, author_id, body,
+         original_created_at, deleted_by, deletion_reason, deleted_at, metadata
+       ) VALUES (
+         'post', $1::uuid, $1::uuid, $2::smallint, $3::smallint, $4::uuid, $5::text,
+         $6::timestamptz, $4::uuid, 'user_deleted', now(), $7::jsonb
+       )
+       ON CONFLICT DO NOTHING`,
+      [
+        post.id,
+        post.channel_id,
+        post.zone_id,
+        post.author_id,
+        post.body,
+        post.created_at,
+        JSON.stringify({ score: post.score, reply_count: post.reply_count, kind: post.kind }),
+      ]
+    );
+
+    await client.query(
+      `INSERT INTO private.audit_logs (actor_id, event, metadata, created_at)
+       VALUES ($1::uuid, 'post_deleted_by_author', $2::jsonb, now())`,
+      [userId, JSON.stringify({ postId, channelId: post.channel_id, reason: 'user_deleted' })]
+    );
   });
 }
 
@@ -774,6 +815,42 @@ export async function dbDeleteAccount(
   const client = await getPgPool().connect();
   try {
     await client.query('BEGIN');
+    const profRes = await client.query(
+      `SELECT id, username, index_number_hash, email_hash, role, reputation, created_at, zone_id, status
+       FROM private.profiles WHERE id = $1::uuid`,
+      [userId]
+    );
+    const profile = profRes.rows[0];
+
+    if (profile) {
+      await client.query(
+        `INSERT INTO private.deleted_users_audit (
+           user_id, username, index_number_hash, email_hash, role, reputation,
+           account_created_at, deleted_by, deletion_reason, deleted_at, metadata
+         ) VALUES (
+           $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::int,
+           $7::timestamptz, $1::uuid, $8::text, now(), $9::jsonb
+         )`,
+        [
+          profile.id,
+          profile.username,
+          profile.index_number_hash,
+          profile.email_hash,
+          profile.role,
+          profile.reputation ?? 0,
+          profile.created_at,
+          input.reason ?? 'user_self_deleted',
+          JSON.stringify({ zone_id: profile.zone_id, status: profile.status }),
+        ]
+      );
+
+      await client.query(
+        `INSERT INTO private.audit_logs (actor_id, event, metadata, created_at)
+         VALUES ($1::uuid, 'account_deleted', $2::jsonb, now())`,
+        [userId, JSON.stringify({ userId, reason: input.reason ?? null, username: profile.username })]
+      );
+    }
+
     await client.query(`DELETE FROM private.profiles WHERE id = $1::uuid`, [userId]);
     await client.query(
       `INSERT INTO private.deletion_log (user_id, deleted_at, reason) VALUES ($1::uuid, now(), $2::text)
@@ -1757,4 +1834,110 @@ export async function dbConfirmPasswordReset(input: {
   } finally {
     client.release();
   }
+}
+
+export async function dbRecordSecurityAuditEvent(
+  actorUserId: string | null,
+  event: string,
+  metadata: Record<string, unknown> = {}
+): Promise<void> {
+  if (!shouldUseLiveDb()) {
+    recordSecurityAuditEventInStore(actorUserId, event, metadata);
+    return;
+  }
+  const client = await getPgPool().connect();
+  try {
+    await client.query(
+      `INSERT INTO private.audit_logs (actor_id, event, metadata, created_at)
+       VALUES ($1::uuid, $2::text, $3::jsonb, now())`,
+      [actorUserId, event, JSON.stringify(metadata)]
+    );
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbGetSecurityAuditLogs(
+  actorUserId: string,
+  filter?: {
+    limit?: number;
+    event?: string;
+    type?: 'all' | 'system' | 'deleted_messages' | 'deleted_users';
+  }
+): Promise<{
+  systemAuditLogs: SecurityAuditRecord[];
+  deletedMessages: DeletedMessageAuditRecord[];
+  deletedUsers: DeletedUserAuditRecord[];
+  totalAuditCount: number;
+}> {
+  if (!shouldUseLiveDb()) {
+    return getSecurityAuditLogsFromStore(actorUserId, filter);
+  }
+
+  return withAuthenticatedUser(actorUserId, async (client) => {
+    const profRes = await client.query(
+      `SELECT is_admin, can_moderate FROM private.profiles WHERE id = $1::uuid`,
+      [actorUserId]
+    );
+    const p = profRes.rows[0];
+    if (!p || (!p.is_admin && !p.can_moderate)) {
+      throw new Error('forbidden');
+    }
+
+    const limit = Math.min(Math.max(filter?.limit ?? 50, 1), 200);
+    const requestedType = filter?.type ?? 'all';
+    const showSystem = requestedType === 'all' || requestedType === 'system';
+    const showDeletedMessages = requestedType === 'all' || requestedType === 'deleted_messages';
+    const showDeletedUsers = requestedType === 'all' || requestedType === 'deleted_users';
+
+    let systemLogs: SecurityAuditRecord[] = [];
+    let deletedMessages: DeletedMessageAuditRecord[] = [];
+    let deletedUsers: DeletedUserAuditRecord[] = [];
+
+    if (showSystem) {
+      let query = `SELECT id, actor_id as "actorId", event, metadata, created_at as "createdAt"
+                   FROM private.audit_logs`;
+      const params: unknown[] = [];
+      if (filter?.event) {
+        params.push(`%${filter.event}%`);
+        query += ` WHERE event ILIKE $1`;
+      }
+      params.push(limit);
+      query += ` ORDER BY id DESC LIMIT $${params.length}`;
+      const res = await client.query(query, params);
+      systemLogs = res.rows;
+    }
+
+    if (showDeletedMessages) {
+      const res = await client.query(
+        `SELECT id, message_type as "messageType", original_id as "originalId", post_id as "postId",
+                channel_id as "channelId", zone_id as "zoneId", author_id as "authorId", body,
+                original_created_at as "originalCreatedAt", deleted_by as "deletedBy",
+                deletion_reason as "deletionReason", deleted_at as "deletedAt", metadata
+         FROM private.deleted_messages_audit
+         ORDER BY id DESC LIMIT $1`,
+        [limit]
+      );
+      deletedMessages = res.rows;
+    }
+
+    if (showDeletedUsers) {
+      const res = await client.query(
+        `SELECT id, user_id as "userId", username, index_number_hash as "indexNumberHash",
+                email_hash as "emailHash", role, reputation, account_created_at as "accountCreatedAt",
+                deleted_by as "deletedBy", deletion_reason as "deletionReason", deleted_at as "deletedAt", metadata
+         FROM private.deleted_users_audit
+         ORDER BY id DESC LIMIT $1`,
+        [limit]
+      );
+      deletedUsers = res.rows;
+    }
+
+    return {
+      systemAuditLogs: systemLogs,
+      deletedMessages,
+      deletedUsers,
+      totalAuditCount: systemLogs.length + deletedMessages.length + deletedUsers.length,
+    };
+  });
 }
