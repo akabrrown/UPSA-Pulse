@@ -27,7 +27,20 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const userId = getAuthenticatedUserId(req);
-    await dbMarkNotificationsRead(userId);
+    let filter: { notificationId?: number; postId?: string } | undefined;
+    try {
+      const body = await req.json();
+      if (body && typeof body === 'object') {
+        const notifId = typeof body.notificationId === 'number' ? body.notificationId : undefined;
+        const pId = typeof body.postId === 'string' ? body.postId : undefined;
+        if (notifId !== undefined || pId !== undefined) {
+          filter = { notificationId: notifId, postId: pId };
+        }
+      }
+    } catch {
+      // Empty body falls back to marking all as read
+    }
+    await dbMarkNotificationsRead(userId, filter);
     return apiSuccess({ markedRead: true });
   } catch (err) {
     return mapDomainErrorToResponse(err);

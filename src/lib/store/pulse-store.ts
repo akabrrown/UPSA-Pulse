@@ -1273,10 +1273,15 @@ export function getNotificationsFromStore(userId: string): NotificationRecord[] 
     .map((n) => ({ ...n }));
 }
 
-export function markNotificationsReadInStore(userId: string): void {
+export function markNotificationsReadInStore(
+  userId: string,
+  filter?: { notificationId?: number; postId?: string }
+): void {
   const nowIso = new Date().toISOString();
   for (const n of state.notifications) {
     if (n.userId === userId && !n.readAt) {
+      if (filter?.notificationId && n.id !== filter.notificationId) continue;
+      if (filter?.postId && n.payload?.post_id !== filter.postId) continue;
       n.readAt = nowIso;
     }
   }
@@ -1341,7 +1346,7 @@ export function createDataRequestInStore(
 
 export function deleteAccountInStore(
   userId: string,
-  input: { confirmationText: string; otp: string }
+  input: { confirmationText: string; otp: string; reason?: string }
 ): { deletedAt: string } {
   if (input.confirmationText !== 'DELETE' || !/^\d{6}$/.test(input.otp)) {
     throw new Error('invalid_confirmation');

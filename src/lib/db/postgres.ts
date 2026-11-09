@@ -627,13 +627,28 @@ export async function dbGetMeAndNotifications(userId: string) {
   });
 }
 
-export async function dbMarkNotificationsRead(userId: string): Promise<void> {
+export async function dbMarkNotificationsRead(
+  userId: string,
+  filter?: { notificationId?: number; postId?: string }
+): Promise<void> {
   if (!shouldUseLiveDb()) {
-    markNotificationsReadInStore(userId);
+    markNotificationsReadInStore(userId, filter);
     return;
   }
   await withAuthenticatedUser(userId, async (client) => {
-    await client.query(`SELECT feed.mark_notifications_read()`);
+    if (filter?.notificationId) {
+      await client.query(
+        `UPDATE private.notifications SET read_at = now() WHERE id = $1 AND user_id = $2 AND read_at IS NULL`,
+        [filter.notificationId, userId]
+      );
+    } else if (filter?.postId) {
+      await client.query(
+        `UPDATE private.notifications SET read_at = now() WHERE user_id = $1 AND (payload->>'post_id')::text = $2 AND read_at IS NULL`,
+        [userId, filter.postId]
+      );
+    } else {
+      await client.query(`SELECT feed.mark_notifications_read()`);
+    }
   });
 }
 
@@ -677,7 +692,7 @@ export async function dbCreateDataRequest(
 
 export async function dbDeleteAccount(
   userId: string,
-  input: { confirmationText: string; otp: string }
+  input: { confirmationText: string; otp: string; reason?: string }
 ) {
   if (!shouldUseLiveDb()) {
     return deleteAccountInStore(userId, input);
@@ -690,9 +705,9 @@ export async function dbDeleteAccount(
     await client.query('BEGIN');
     await client.query(`DELETE FROM private.profiles WHERE id = $1::uuid`, [userId]);
     await client.query(
-      `INSERT INTO private.deletion_log (user_id, deleted_at) VALUES ($1::uuid, now())
-       ON CONFLICT (user_id) DO UPDATE SET deleted_at = now()`,
-      [userId]
+      `INSERT INTO private.deletion_log (user_id, deleted_at, reason) VALUES ($1::uuid, now(), $2::text)
+       ON CONFLICT (user_id) DO UPDATE SET deleted_at = now(), reason = excluded.reason`,
+      [userId, input.reason ?? null]
     );
     await client.query('COMMIT');
     return { deletedAt: new Date().toISOString() };

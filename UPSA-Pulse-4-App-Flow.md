@@ -24,11 +24,11 @@ Every journey, screen transition and edge case
 | Admin (is\_admin) | Configuration owner | Zones, channels, keyword rules, allowed domains, moderator flags |
 | Unmask holder (flag can\_unmask) | Two named people, disabled until policy approved | Initiate or approve an author unmask under policy |
 
-2\. Primary flows
+2. Primary flows
 =================
 
-F1. First-time onboarding
--------------------------
+First-time onboarding
+---------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -39,21 +39,21 @@ F1. First-time onboarding
 | 5 | User | Enters OTP. | Wrong code 5 times: lock for 15 minutes. Expired: resend |
 | 6 | System | Creates profile; stores consent records with document version and timestamp; registers the device as trusted. | Consent write fails: account is not activated, user retries |
 | 7 | User | Sees the location explainer and taps Allow. | Not now: lands on the outside-zone screen with a retry button |
-| 8 | System | Runs F3 zone verification, then opens the feed with a short tip about Asks and the rules. | See F3 |
+| 8 | System | Runs zone verification, then opens the feed with a short tip about Asks and the rules. | See Zone verification |
 
-F2. Returning sign-in and device approval
------------------------------------------
+Returning sign-in and device approval
+-------------------------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
-| 1 | User | Opens app. A valid session goes straight to F3. Otherwise enters email and OTP. | Session revoked: back to sign-in |
+| 1 | User | Opens app. A valid session goes straight to zone verification. Otherwise enters email and OTP. | Session revoked: back to sign-in |
 | 2 | System | Checks the device token against trusted devices. | Unknown device: show Approve this device screen |
 | 3 | System | Sends an alert to the trusted device and an approval email link. | No access to the old device: email link only; link expires in 30 minutes |
 | 4 | User | Approves from the old device or the email link. | Denied: new device is blocked and a security notice is raised |
 | 5 | System | Moves trust to the new device and revokes the old device session. | Repeated switching within 24 hours is rate-limited |
 
-F3. Zone verification
----------------------
+Zone verification
+-----------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -63,8 +63,8 @@ F3. Zone verification
 | 4 | Server | Inside: stores zone id and expiry only, discards coordinates, returns success. | Outside: returns not\_in\_zone |
 | 5 | Client | Shows the feed on success, or the outside-zone screen on not\_in\_zone. | Window expires mid-compose: draft is kept locally and re-verification is attempted before send |
 
-F4. Browse the feed
--------------------
+Browse the feed
+---------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -72,21 +72,21 @@ F4. Browse the feed
 | 2 | User | Filters by channel or Asks only. | Channel disabled by admin: it disappears from the list |
 | 3 | System | Loads 20 items per page by cursor; infinite scroll loads the next page. | Duplicates from shifting Hot scores are removed by id |
 | 4 | System | Realtime event arrives: show New posts (n) pill; tapping it refreshes the top of the list. | Pill never auto-inserts items under the reader |
-| 5 | User | Taps a card to open the thread (F6). | Item removed meanwhile: thread-unavailable message |
+| 5 | User | Taps a card to open the thread. | Item removed meanwhile: thread-unavailable message |
 
-F5. Create a post or Ask
-------------------------
+Create a post or Ask
+--------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
 | 1 | User | Taps Compose, picks a channel, types up to 500 characters, optionally turns on Ask. | Over limit: counter turns red, Send disabled |
-| 2 | User | Reads the one-line reminder (identity visible to us, not to students) and taps Post. | Window expired: silent re-verify (F3) then retry |
+| 2 | User | Reads the one-line reminder (identity visible to us, not to students) and taps Post. | Window expired: silent re-verify then retry |
 | 3 | Server | Validates input, applies rate limit, calls the create-post function. | Rate limited: wait message |
 | 4 | Database | Zone window checked; keyword pre-screen runs; post set to published or held; OP alias created. | Zone not verified: error code zone\_not\_verified |
 | 5 | System | Published: appears in the feed and a realtime event is broadcast. Held: author sees neutral Being checked label. | Held post approved later: author gets an alert |
 
-F6. Open a thread and reply
----------------------------
+Open a thread and reply
+-----------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -95,8 +95,8 @@ F6. Open a thread and reply
 | 3 | Database | Allocates the alias under a row lock: existing alias reused, new users get the next Student number, the author is OP. | Concurrent first replies each receive different numbers |
 | 4 | System | Increments reply count, updates last activity, notifies the post author. | Author deleted account: no notification is sent |
 
-F7. Vote
---------
+Vote
+----
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -104,16 +104,16 @@ F7. Vote
 | 2 | Server | Upserts the vote; tapping the same arrow again removes it. Own content rejects votes. | Rate limit exceeded: revert |
 | 3 | Database | Trigger updates counts and the author karma; at net score -5 a post is hidden and queued. | Hidden post stays visible to its author with a neutral label |
 
-F8. Accept an answer
---------------------
+Accept an answer
+----------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
 | 1 | Asker | On an Ask, taps Mark as answer on one reply. | Only the original author, only once at a time |
 | 2 | System | Sets answered reply id, shows Answered badge, pins the reply, alerts the reply author. | Changing the answer replaces the previous one |
 
-F9. Report
-----------
+Report
+------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -122,8 +122,8 @@ F9. Report
 | 3 | Database | Stores one report per user per item; counts distinct reporters; auto-hides at 2 for priority reasons or 5 for others. | Self-harm reason also triggers the support-card logic for the author thread |
 | 4 | System | Adds the item to the moderation queue with priority. | Reporter gets an alert when action is taken (outcome only) |
 
-F10. Moderation
----------------
+Moderation
+----------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -132,8 +132,8 @@ F10. Moderation
 | 3 | System | Writes an append-only moderation record, applies the status change, notifies author and reporters (outcome only). | Two moderators acting on one item: second sees the updated state |
 | 4 | Moderator | Escalates serious cases (threats) to the admin using the escalation procedure in the Workflow document. | Escalation out of hours: on-call admin contacted |
 
-F11. Alerts and push
---------------------
+Alerts and push
+---------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -141,18 +141,18 @@ F11. Alerts and push
 | 2 | User | Accepts the browser permission. | Denied: banner hidden; in-app alerts continue |
 | 3 | System | Sends push for replies, answers and moderation outcomes only. | Expired subscription: removed on delivery failure |
 
-F12. Delete account
--------------------
+Delete account
+--------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
-| 1 | User | Me, Delete account. Reads what is removed (profile, devices, votes, alerts, sign-in) and what remains (past posts with no link to the user; legal records). | Cancel returns to Me |
+| 1 | User | Me, Delete account. Reads what is removed (profile, devices, votes, alerts, sign-in) and what remains (past posts with no link to the user; legal records). Can provide an optional deletion reason. | Cancel returns to Me |
 | 2 | User | Confirms by typing DELETE and a fresh OTP. | Wrong OTP: stay on screen |
 | 3 | System | Deletes profile data and Auth user; sets author\_id to null on posts and replies; signs out all sessions. | Pending moderation case: record retained under retention rules and the user is told |
 | 4 | System | Shows a confirmation screen and sends a final email (no re-activation link). | Re-signing up later creates a new account with no history |
 
-F13. Data request (access or correction)
-----------------------------------------
+Data request (access or correction)
+-----------------------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -160,8 +160,8 @@ F13. Data request (access or correction)
 | 2 | System | Creates a request record with due date and emails a receipt. | Identity confirmed by sign-in session |
 | 3 | Admin | Prepares the export or correction per the Workflow procedure and marks complete. | Overdue requests surface on the admin dashboard |
 
-F14. Legal update and re-acceptance
------------------------------------
+Legal update and re-acceptance
+------------------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -169,8 +169,8 @@ F14. Legal update and re-acceptance
 | 2 | User | On next sign-in sees a blocking sheet with the summary and links to the full text; ticks acceptance. | Declines: can still delete account or export data, but cannot use the feed |
 | 3 | System | Records the new version and timestamp. | Failure leaves the old consent state |
 
-F15. Suspension, ban and appeal
--------------------------------
+Suspension, ban and appeal
+--------------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |
@@ -178,8 +178,8 @@ F15. Suspension, ban and appeal
 | 2 | User | Submits an appeal with a short message. | One open appeal at a time |
 | 3 | Admin | A different moderator than the original reviews and decides. | Decision logged and communicated |
 
-F16. Unmask (restricted)
-------------------------
+Unmask (restricted)
+-------------------
 
 | **#** | **Actor** | **Step** | **Failure or edge case** |
 | --- | --- | --- | --- |

@@ -1172,7 +1172,7 @@ export default function AdminQueuePage() {
         <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4">
           <div className="flex items-center gap-2 text-[#8A6200] font-bold text-[15px]">
             <Lock className="w-4 h-4" aria-hidden="true" />
-            <h2>Restricted Two-Person Author Unmask (MOD-3 / Decision D6 / Flow F16)</h2>
+            <h2>Restricted Two-Person Author Unmask</h2>
           </div>
           <p className="text-[14px] text-[var(--text-secondary)]">
             Disabled by default until formal written policy approval [DECISION D6]. When enabled via{' '}

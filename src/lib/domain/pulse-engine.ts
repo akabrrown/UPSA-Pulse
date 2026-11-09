@@ -718,9 +718,11 @@ export function verifySessionToken(token: string, secret: string): string | null
     return null;
   }
 
-  // Fallback for raw valid UUIDs (e.g. test headers)
+  // Raw UUIDs are accepted only under the test runner; in any deployed environment a
+  // session must carry a valid signature, otherwise anyone could impersonate a user id.
+  const allowRawIds = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (uuidRegex.test(token.trim())) {
+  if (allowRawIds && uuidRegex.test(token.trim())) {
     return token.trim();
   }
   return null;

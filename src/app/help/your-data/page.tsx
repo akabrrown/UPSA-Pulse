@@ -15,7 +15,7 @@ export default function YourDataHelpPage() {
     >
       <section className="space-y-2">
         <h2 className="text-[15px] font-semibold text-[var(--text-heading)]">
-          1. Self-service account deletion (App Flow F12)
+          1. Self-service account deletion
         </h2>
         <p>
           You can delete your account at any time from the <strong>Me</strong> tab inside the app:
@@ -36,7 +36,7 @@ export default function YourDataHelpPage() {
 
       <section className="space-y-2">
         <h2 className="text-[15px] font-semibold text-[var(--text-heading)]">
-          2. Data access and correction requests (App Flow F13)
+          2. Data access and correction requests
         </h2>
         <p>
           Signed-in users can file an <strong>Access</strong> (export of your profile, consents,

@@ -1,17 +1,21 @@
 import { NextRequest } from 'next/server';
 import { zoneVerifySchema } from '@/lib/validation/schemas';
 import { dbVerifyUserZone } from '@/lib/db/postgres';
-import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
+import { apiError, apiSuccess, getOptionalAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = getOptionalAuthenticatedUserId(req);
+    if (!userId) {
+      return apiError('auth_required', 'Sign in to verify your campus location.', 401);
+    }
+
     const body = await req.json();
     const parsed = zoneVerifySchema.safeParse(body);
     if (!parsed.success) {
       return apiError('invalid_input', 'Valid latitude, longitude, and accuracy are required.', 400);
     }
 
-    const userId = getAuthenticatedUserId(req);
     const result = await dbVerifyUserZone(userId, parsed.data);
 
     if (!result.verified) {

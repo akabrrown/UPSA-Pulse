@@ -185,12 +185,13 @@ export const dataRequestSchema = z.object({
   details: z.string().trim().min(5, 'Please describe your request').max(1000),
 });
 
-// ACCT-1 & F12: Delete account confirmation (typing DELETE + 6-digit OTP)
+// Delete account confirmation (typing DELETE + 6-digit OTP + optional reason)
 export const deleteAccountSchema = z.object({
   confirmationText: z.literal('DELETE', {
     errorMap: () => ({ message: 'Type DELETE in capital letters to confirm.' }),
   }),
   otp: z.string().trim().regex(/^\d{6}$/, 'Enter a valid 6-digit OTP code'),
+  reason: z.string().trim().max(1000).optional(),
 });
 
 // F15: Submit suspension or ban appeal

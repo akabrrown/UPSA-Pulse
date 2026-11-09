@@ -13,6 +13,8 @@ import {
   deleteAccountInStore,
   executeUnmaskActionInStore,
   signUpStudentInStore,
+  getNotificationsFromStore,
+  markNotificationsReadInStore,
 } from '@/lib/store/pulse-store';
 
 describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 & 9)', () => {
@@ -170,7 +172,7 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
     expect(thread.replies[1]?.id).toBe(r1.id);
   });
 
-  it('deletes account, nulls author_id on past posts while keeping thread intact, and logs deletion', () => {
+  it('deletes account, nulls author_id on past posts while keeping thread intact, and logs deletion with optional reason', () => {
     verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
     verifyUserZoneInStore(studentKojo, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
 
@@ -180,11 +182,39 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
       body: 'Best waakye spot near the east gate is open.',
     });
 
-    deleteAccountInStore(studentEfua, { confirmationText: 'DELETE', otp: '123456' });
+    const deletion = deleteAccountInStore(studentEfua, {
+      confirmationText: 'DELETE',
+      otp: '123456',
+      reason: 'Graduating this semester and no longer need campus updates.',
+    });
+    expect(deletion.deletedAt).toBeDefined();
 
     const thread = getThreadFromStore(studentKojo, post.id);
     expect(thread.post.body).toContain('Best waakye spot');
     expect(thread.post.isMine).toBe(false);
+  });
+
+  it('marks notifications as read when opening a reply or thread', () => {
+    verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
+    verifyUserZoneInStore(studentKojo, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
+
+    const post = createPostInStore(studentEfua, {
+      channelId: 1,
+      kind: 'ask',
+      body: 'Where is the graduation gown pickup?',
+    });
+    createReplyInStore(studentKojo, post.id, 'At the main auditorium lobby.');
+
+    const notifsBefore = getNotificationsFromStore(studentEfua);
+    const replyNotif = notifsBefore.find((n) => n.payload?.post_id === post.id);
+    expect(replyNotif).toBeDefined();
+    expect(replyNotif?.readAt).toBeNull();
+
+    markNotificationsReadInStore(studentEfua, { postId: post.id });
+
+    const notifsAfter = getNotificationsFromStore(studentEfua);
+    const markedNotif = notifsAfter.find((n) => n.payload?.post_id === post.id);
+    expect(markedNotif?.readAt).not.toBeNull();
   });
 
   it('enforces disabled unmask gate by default (D6) and two-person approval when policy flag enabled', () => {

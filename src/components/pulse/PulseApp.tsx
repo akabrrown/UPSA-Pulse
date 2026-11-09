@@ -35,6 +35,7 @@ import {
 import { AliasChipWithGlyph } from '@/components/pulse/ThreadGlyphIcon';
 import { ChannelIcon } from '@/components/pulse/ChannelIcon';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { useGeofenceSync, type GeofenceStatus } from '@/lib/geofence/use-geofence-sync';
 import type {
   ChannelRecord,
   LegalDocumentRecord,
@@ -48,6 +49,29 @@ type ActiveTab = 'feed' | 'channels' | 'alerts' | 'me';
 type OnboardingStage = 'none' | 'welcome' | 'signup' | 'otp' | 'location_explainer' | 'outside_zone';
 
 const DEVICE_TOKEN_STORAGE_KEY = 'upsa_pulse_device_token';
+const LOCATION_ALLOWED_STORAGE_KEY = 'upsa_pulse_location_allowed';
+
+const GEOFENCE_STATE_LABELS: Record<GeofenceStatus['state'], string> = {
+  idle: 'Not checking',
+  locating: 'Locating…',
+  verified: 'On campus',
+  outside: 'Outside campus',
+  weak_signal: 'Weak GPS signal',
+  denied: 'Location blocked',
+  unavailable: 'No GPS fix',
+  unsupported: 'Unsupported browser',
+  auth_required: 'Sign in required',
+  error: 'Retrying',
+};
+
+const DEV_SIMULATED_POSITIONS: Array<{
+  label: string;
+  coords: { lat: number; lng: number; accuracy: number };
+}> = [
+  { label: 'Main Campus', coords: { lat: 5.6612, lng: -0.1661, accuracy: 20 } },
+  { label: 'Hostel A & B', coords: { lat: 5.6588, lng: -0.1706, accuracy: 20 } },
+  { label: 'Hostel C', coords: { lat: 5.6576, lng: -0.1676, accuracy: 20 } },
+];
 
 function getBrowserDeviceToken(): string | undefined {
   if (typeof window === 'undefined') return undefined;
@@ -177,7 +201,7 @@ export function PulseApp() {
   const [otpInput, setOtpInput] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState<boolean>(false);
-  const [zoneErrorReason, setZoneErrorReason] = useState<string | null>(null);
+  const [locationAllowed, setLocationAllowed] = useState<boolean>(false);
 
   // Feed & Thread Data State (5 UI states: loading, empty, error, success, offline)
   const [loading, setLoading] = useState<boolean>(true);
@@ -213,8 +237,7 @@ export function PulseApp() {
   const [composeBody, setComposeBody] = useState<string>('');
   const [composeStatusToast, setComposeStatusToast] = useState<string | null>(null);
 
-  // Support Card (MOD-2) & Report Sheet (F9)
-  const [supportCardOpen, setSupportCardOpen] = useState<boolean>(false);
+  // Report Sheet
   const [reportTarget, setReportTarget] = useState<{
     targetType: 'post' | 'reply';
     targetId: string;
@@ -223,7 +246,7 @@ export function PulseApp() {
   const [reportNote, setReportNote] = useState<string>('');
   const [reportStatusMessage, setReportStatusMessage] = useState<string | null>(null);
 
-  // Profile, Alerts, Data Request & Account Deletion (F11, F12, F13, F14, F15)
+  // Profile, Alerts, Data Request & Account Deletion
   const [profileSummary, setProfileSummary] = useState<{
     username?: string | null;
     indexNumber?: string | null;
@@ -238,17 +261,25 @@ export function PulseApp() {
   } | null>(null);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [pushSubscribed, setPushSubscribed] = useState<boolean>(false);
+  const [pushUpNotification, setPushUpNotification] = useState<{
+    id: string;
+    title: string;
+    message: string;
+    postId?: string;
+  } | null>(null);
+  const seenNotifIdsRef = useRef<Set<number>>(new Set());
   const [isIosNotStandalone, setIsIosNotStandalone] = useState<boolean>(false);
   const [dataRequestType, setDataRequestType] = useState<'access' | 'correction'>('access');
   const [dataRequestDetails, setDataRequestDetails] = useState<string>('');
   const [dataRequestMessage, setDataRequestMessage] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
   const [deleteOtp, setDeleteOtp] = useState<string>('');
+  const [deleteReason, setDeleteReason] = useState<string>('');
   const [accountDeletedMessage, setAccountDeletedMessage] = useState<string | null>(null);
   const [appealMessage, setAppealMessage] = useState<string>('');
   const [appealSubmitted, setAppealSubmitted] = useState<boolean>(false);
 
-  // F2: Pending Device Approval & F14: Blocking Legal Re-acceptance Sheet
+  // Pending Device Approval & Blocking Legal Re-acceptance Sheet
   const [pendingDeviceModalOpen, setPendingDeviceModalOpen] = useState<boolean>(false);
   const [pendingDeviceToken, setPendingDeviceToken] = useState<string>('upsa-new-device-token-2026');
   const [legalUpdateModalOpen, setLegalUpdateModalOpen] = useState<boolean>(false);
@@ -333,13 +364,69 @@ export function PulseApp() {
     }
   }, [sort, selectedChannelId, selectedZoneId, asksOnly]);
 
+  const markNotificationsForPostAsRead = useCallback(
+    async (postId?: string, notificationId?: number) => {
+      setNotifications((prev) =>
+        prev.map((n) => {
+          const matchNotif = notificationId !== undefined && n.id === notificationId;
+          const matchPost = postId !== undefined && n.payload?.post_id === postId;
+          if (matchNotif || matchPost) {
+            return { ...n, readAt: n.readAt ?? new Date().toISOString() };
+          }
+          return n;
+        })
+      );
+      try {
+        await fetch('/api/me', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            notificationId,
+            postId,
+          }),
+        });
+      } catch {
+        // Optimistic update retained
+      }
+    },
+    []
+  );
+
   const loadMeAndAlerts = useCallback(async () => {
     try {
       const res = await fetch('/api/me');
       const json = await res.json();
       if (res.ok && json.success) {
         setProfileSummary(json.data.profile);
-        setNotifications(json.data.notifications ?? []);
+        const incoming: NotificationRecord[] = json.data.notifications ?? [];
+        setNotifications(incoming);
+
+        // Detect fresh unread alerts to trigger in-app push-up notification
+        if (seenNotifIdsRef.current.size > 0) {
+          const fresh = incoming.filter((n) => !n.readAt && !seenNotifIdsRef.current.has(n.id));
+          const latest = fresh[0];
+          if (latest) {
+            const title =
+              latest.type === 'reply'
+                ? `New reply from Student ${String(latest.payload?.alias_no ?? '')}`
+                : latest.type === 'answer_accepted'
+                ? 'Your reply was accepted as answer'
+                : 'Campus Alert';
+            const message =
+              typeof latest.payload?.snippet === 'string'
+                ? latest.payload.snippet
+                : 'You have a new alert on UPSA Pulse.';
+            setPushUpNotification({
+              id: String(latest.id),
+              title,
+              message,
+              postId: typeof latest.payload?.post_id === 'string' ? latest.payload.post_id : undefined,
+            });
+          }
+        }
+        for (const n of incoming) {
+          seenNotifIdsRef.current.add(n.id);
+        }
       }
     } catch {
       // Keep cached state if offline
@@ -348,6 +435,7 @@ export function PulseApp() {
 
   const loadThread = useCallback(async (postId: string) => {
     try {
+      void markNotificationsForPostAsRead(postId);
       const res = await fetch(`/api/posts/${postId}`);
       const json = await res.json();
       if (res.ok && json.success) {
@@ -359,7 +447,24 @@ export function PulseApp() {
     } catch {
       setErrorMessage('Unable to open thread right now.');
     }
-  }, []);
+  }, [markNotificationsForPostAsRead]);
+
+  // Periodic background sync for alerts so students don't need to refresh to get push-up alerts
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void loadMeAndAlerts();
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [loadMeAndAlerts]);
+
+  // Auto-dismiss push-up banner after 6 seconds
+  useEffect(() => {
+    if (!pushUpNotification) return;
+    const t = setTimeout(() => setPushUpNotification(null), 6000);
+    return () => clearTimeout(t);
+  }, [pushUpNotification]);
 
   useEffect(() => {
     void loadFeed();
@@ -637,10 +742,6 @@ export function PulseApp() {
       setComposeIsAsk(false);
       setComposeOpen(false);
 
-      if (json.data.showSupportCard) {
-        setSupportCardOpen(true);
-      }
-
       if (json.data.heldMessage) {
         setComposeStatusToast(json.data.heldMessage);
       } else {
@@ -666,9 +767,6 @@ export function PulseApp() {
       const json = await res.json();
       if (res.ok && json.success) {
         setReplyBody('');
-        if (json.data.showSupportCard) {
-          setSupportCardOpen(true);
-        }
         if (json.data.heldMessage) {
           setComposeStatusToast(json.data.heldMessage);
         }
@@ -720,24 +818,16 @@ export function PulseApp() {
       setReportTarget(null);
       setReportNote('');
       setReportStatusMessage('Report received. Moderators review priority reports within 2 hours.');
-      if (json.data.showSupportCard) {
-        setSupportCardOpen(true);
-      }
       void loadFeed();
     }
   };
 
-  const handleVerifyZone = async (coords: { lat: number; lng: number; accuracy: number }) => {
-    setZoneErrorReason(null);
-    const res = await fetch('/api/zone/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(coords),
-    });
-    const json = await res.json();
-    if (res.ok && json.success) {
-      setOnboardingStage('none');
-      setComposeStatusToast(`Location verified: ${json.data.zoneName ?? 'UPSA Campus'} (15-min pass)`);
+  const handleGeofenceVerified = useCallback(
+    (verified: GeofenceStatus) => {
+      setOnboardingStage((stage) =>
+        stage === 'outside_zone' || stage === 'location_explainer' ? 'none' : stage
+      );
+      setComposeStatusToast(`Location verified: ${verified.zoneName ?? 'UPSA Campus'}`);
       void loadFeed();
       feedWorkerRef.current?.postMessage({
         type: 'START',
@@ -748,37 +838,50 @@ export function PulseApp() {
           asksOnly,
         },
       });
-    } else {
-      setZoneErrorReason(json.error?.message ?? 'Pulse only works on and around the UPSA campus.');
-      setOnboardingStage('outside_zone');
+    },
+    [loadFeed, sort, selectedZoneId, selectedChannelId, asksOnly]
+  );
+
+  const geofence = useGeofenceSync({
+    enabled: Boolean(profileSummary) && locationAllowed,
+    onVerified: handleGeofenceVerified,
+  });
+
+  const allowLocation = () => {
+    try {
+      window.localStorage.setItem(LOCATION_ALLOWED_STORAGE_KEY, '1');
+    } catch {
+      // storage unavailable; permission still applies for this session
     }
+    setLocationAllowed(true);
   };
 
   const handleLiveGpsCheck = () => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setErrorMessage('Geolocation is not supported by your browser.');
+    if (!locationAllowed) {
+      allowLocation();
       return;
     }
-    setComposeStatusToast('Requesting GPS to verify campus geofence...');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        void handleVerifyZone({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        });
-      },
-      (err) => {
-        setZoneErrorReason(
-          err.code === 1
-            ? 'Location permission was denied. Please allow location access in your browser settings to verify you are on campus.'
-            : 'Could not acquire GPS fix. Try moving closer to campus or hostel boundaries.'
-        );
-        setOnboardingStage('outside_zone');
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-    );
+    setComposeStatusToast('Checking your campus location...');
+    geofence.checkNow();
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (window.localStorage.getItem(LOCATION_ALLOWED_STORAGE_KEY) === '1') {
+        setLocationAllowed(true);
+        return;
+      }
+    } catch {
+      // fall through to the permission query
+    }
+    navigator.permissions
+      ?.query({ name: 'geolocation' as PermissionName })
+      .then((permission) => {
+        if (permission.state === 'granted') setLocationAllowed(true);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const setSessionUserCookie = (_userId: string) => {
     // Session cookies are set exclusively server-side via HttpOnly, Secure, SameSite=Lax
@@ -1213,6 +1316,7 @@ export function PulseApp() {
       body: JSON.stringify({
         confirmationText: deleteConfirmText,
         otp: deleteOtp,
+        reason: deleteReason.trim() || undefined,
       }),
     });
     const json = await res.json();
@@ -1222,6 +1326,7 @@ export function PulseApp() {
       );
       setDeleteConfirmText('');
       setDeleteOtp('');
+      setDeleteReason('');
     } else {
       setComposeStatusToast(
         json.error?.message ?? 'Type DELETE and enter your 6-digit OTP to confirm.'
@@ -2069,7 +2174,8 @@ export function PulseApp() {
           </h1>
           <p className="text-[16px] leading-[24px] text-[var(--text-secondary)]">
             Pulse is only useful when everyone in the feed is actually on or around the UPSA campus.
-            Your phone sends a single reading to verify you are inside the boundary.
+            While the app is open, your phone checks its position in the background and renews your
+            pass automatically, so you never have to verify by hand.
           </p>
           <div className="bg-[var(--surface-subtle)] border border-[var(--border-color)] rounded-[8px] p-3 text-[14px] space-y-1">
             <p className="font-semibold text-[var(--text-heading)]">What is never stored:</p>
@@ -2081,52 +2187,33 @@ export function PulseApp() {
           <div className="flex flex-col gap-3 pt-2">
             <button
               type="button"
-              onClick={() => {
-                if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-                  navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                      void handleVerifyZone({
-                        lat: pos.coords.latitude,
-                        lng: pos.coords.longitude,
-                        accuracy: pos.coords.accuracy,
-                      });
-                    },
-                    () => {
-                      void handleVerifyZone({ lat: 5.6605, lng: -0.1662, accuracy: 35 });
-                    },
-                    { enableHighAccuracy: true, timeout: 7000 }
-                  );
-                } else {
-                  void handleVerifyZone({ lat: 5.6605, lng: -0.1662, accuracy: 35 });
-                }
-              }}
+              onClick={allowLocation}
               className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
             >
               Allow Location Check (Use Device GPS)
             </button>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => void handleVerifyZone({ lat: 5.6605, lng: -0.1662, accuracy: 25 })}
-                className="min-h-[40px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold cursor-pointer"
-              >
-                Verify: Main Campus
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleVerifyZone({ lat: 5.6588, lng: -0.1705, accuracy: 25 })}
-                className="min-h-[40px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold cursor-pointer"
-              >
-                Verify: Hostel A &amp; B
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleVerifyZone({ lat: 5.6575, lng: -0.1675, accuracy: 25 })}
-                className="min-h-[40px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold cursor-pointer"
-              >
-                Verify: Hostel C
-              </button>
-            </div>
+            {geofence.status.state !== 'idle' && geofence.status.message && (
+              <p className="text-[13px] text-[var(--text-secondary)]" role="status">
+                {geofence.status.message}
+              </p>
+            )}
+            {process.env.NODE_ENV !== 'production' && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" aria-label="Development simulation">
+                {DEV_SIMULATED_POSITIONS.map((point) => (
+                  <button
+                    key={point.label}
+                    type="button"
+                    onClick={() => {
+                      allowLocation();
+                      geofence.injectPosition(point.coords);
+                    }}
+                    className="min-h-[40px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold cursor-pointer"
+                  >
+                    Dev: {point.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setOnboardingStage('outside_zone')}
@@ -2147,42 +2234,37 @@ export function PulseApp() {
           <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
             Outside the UPSA Campus Zone
           </h1>
-          <p className="text-[16px] leading-[24px] text-[var(--text-primary)]">
-            {zoneErrorReason ??
+          <p className="text-[16px] leading-[24px] text-[var(--text-primary)]" role="status">
+            {geofence.status.message ??
               'Pulse only works on and around the UPSA campus. Move closer and try again.'}
           </p>
           <p className="text-[14px] text-[var(--text-secondary)]">
-            If you are indoors with weak GPS accuracy (&gt;150 m), step near an open walkway and tap
-            Retry.
+            Pulse keeps checking your position in the background and unlocks the feed as soon as you
+            are inside a campus zone. If you are indoors with weak GPS accuracy (&gt;150 m), step near
+            an open walkway or window.
           </p>
           <div className="flex flex-wrap gap-2.5 pt-2">
             <button
               type="button"
-              onClick={() =>
-                void handleVerifyZone({ lat: 5.6605, lng: -0.1662, accuracy: 25 })
-              }
+              onClick={handleLiveGpsCheck}
               className="min-h-[44px] px-4 rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[14px] hover:bg-[#1C4A8F] cursor-pointer"
             >
-              Retry (Main Campus)
+              {locationAllowed ? 'Check my location now' : 'Allow location & check'}
             </button>
-            <button
-              type="button"
-              onClick={() =>
-                void handleVerifyZone({ lat: 5.6588, lng: -0.1705, accuracy: 25 })
-              }
-              className="min-h-[44px] px-4 rounded-[8px] bg-[#1C4A8F] text-white font-semibold text-[14px] hover:bg-[#0B2A5B] cursor-pointer"
-            >
-              Retry (Hostel A &amp; B)
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                void handleVerifyZone({ lat: 5.6575, lng: -0.1675, accuracy: 25 })
-              }
-              className="min-h-[44px] px-4 rounded-[8px] bg-[#1C4A8F] text-white font-semibold text-[14px] hover:bg-[#0B2A5B] cursor-pointer"
-            >
-              Retry (Hostel C)
-            </button>
+            {process.env.NODE_ENV !== 'production' &&
+              DEV_SIMULATED_POSITIONS.map((point) => (
+                <button
+                  key={point.label}
+                  type="button"
+                  onClick={() => {
+                    allowLocation();
+                    geofence.injectPosition(point.coords);
+                  }}
+                  className="min-h-[44px] px-4 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] font-semibold text-[14px] cursor-pointer"
+                >
+                  Dev: {point.label}
+                </button>
+              ))}
             <button
               type="button"
               onClick={() => {
@@ -2278,17 +2360,6 @@ export function PulseApp() {
                       >
                         <MapPin className="w-4 h-4 text-[#8A6200] shrink-0" />
                         <span>Verify Campus Location (GPS)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOverflowOpen(false);
-                          setSupportCardOpen(true);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[14px] hover:bg-[var(--surface-subtle)] cursor-pointer text-left text-[#A32121] font-medium"
-                      >
-                        <HeartHandshake className="w-4 h-4 text-[#A32121] shrink-0" />
-                        <span>Student Crisis Support (24/7)</span>
                       </button>
                     </div>
 
@@ -3159,7 +3230,7 @@ export function PulseApp() {
             </div>
           </section>
         ) : activeTab === 'alerts' ? (
-          /* ALERTS TAB — App Flow F11 & Design Brief Section 5 */
+          /* ALERTS TAB */
           <section aria-label="In-app alerts and push settings" className="space-y-4">
             <div className="flex items-center justify-between">
               <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
@@ -3234,43 +3305,67 @@ export function PulseApp() {
                     type="button"
                     onClick={async () => {
                       try {
-                        if (
-                          typeof window !== 'undefined' &&
-                          'serviceWorker' in navigator &&
-                          'PushManager' in window
-                        ) {
+                        if (typeof window !== 'undefined' && 'Notification' in window) {
                           const perm = await Notification.requestPermission();
                           if (perm !== 'granted') {
                             setComposeStatusToast('Notification permission was dismissed or denied.');
                             return;
                           }
-                          const reg = await navigator.serviceWorker.ready;
-                          const cfgRes = await fetch('/api/push/subscribe');
-                          const cfgJson = await cfgRes.json();
-                          const vapidKey = cfgJson.data?.publicKey;
+                          if ('serviceWorker' in navigator) {
+                            try {
+                              await navigator.serviceWorker.register('/sw.js');
+                            } catch (e) {
+                              console.warn('SW register error:', e);
+                            }
+                            let reg: ServiceWorkerRegistration | undefined;
+                            try {
+                              reg = await Promise.race([
+                                navigator.serviceWorker.ready,
+                                new Promise<ServiceWorkerRegistration>((_, reject) =>
+                                  setTimeout(() => reject(new Error('timeout')), 3000)
+                                ),
+                              ]);
+                            } catch {
+                              reg = await navigator.serviceWorker.getRegistration();
+                            }
 
-                          let sub = await reg.pushManager.getSubscription();
-                          if (!sub && vapidKey) {
-                            sub = await reg.pushManager.subscribe({
-                              userVisibleOnly: true,
-                              applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as BufferSource,
-                            });
+                            if (reg && 'PushManager' in window && reg.pushManager) {
+                              const cfgRes = await fetch('/api/push/subscribe');
+                              const cfgJson = await cfgRes.json();
+                              const vapidKey = cfgJson.data?.publicKey;
+
+                              let sub = await reg.pushManager.getSubscription();
+                              if (!sub && vapidKey) {
+                                sub = await reg.pushManager.subscribe({
+                                  userVisibleOnly: true,
+                                  applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as BufferSource,
+                                });
+                              }
+                              if (sub) {
+                                const subJson = sub.toJSON();
+                                await fetch('/api/push/subscribe', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    endpoint: sub.endpoint,
+                                    p256dh: subJson.keys?.p256dh ?? 'p256dh-key',
+                                    auth: subJson.keys?.auth ?? 'auth-key',
+                                  }),
+                                });
+                              }
+                            }
                           }
-                          if (sub) {
-                            const subJson = sub.toJSON();
-                            await fetch('/api/push/subscribe', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                endpoint: sub.endpoint,
-                                p256dh: subJson.keys?.p256dh ?? 'p256dh-key',
-                                auth: subJson.keys?.auth ?? 'auth-key',
-                              }),
+                          try {
+                            new Notification('UPSA Pulse Alerts Active', {
+                              body: 'Push alerts enabled! You will be notified when students reply to your Asks and posts.',
+                              icon: '/icons/icon-192.png',
                             });
-                            setPushSubscribed(true);
-                            setComposeStatusToast('Web Push notifications enabled for UPSA Pulse!');
-                            return;
+                          } catch {
+                            // Direct notification construction fallback
                           }
+                          setPushSubscribed(true);
+                          setComposeStatusToast('Web Push notifications enabled for UPSA Pulse!');
+                          return;
                         }
                         // Fallback simulation for non-HTTPS dev environment
                         await fetch('/api/push/subscribe', {
@@ -3312,6 +3407,9 @@ export function PulseApp() {
                         setActiveTab('feed');
                         setActiveThreadId(postId);
                         void loadThread(postId);
+                        void markNotificationsForPostAsRead(postId, n.id);
+                      } else {
+                        void markNotificationsForPostAsRead(undefined, n.id);
                       }
                     }}
                     className={`rounded-[8px] border p-4 cursor-pointer space-y-1 ${
@@ -3418,19 +3516,43 @@ export function PulseApp() {
               </div>
             </div>
 
-            {/* Campus Geofence & Location Status (F3) */}
+            {/* Campus Geofence & Location Status (F3) — maintained by the background geofence worker */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 text-[#8A6200] font-bold text-[15px]">
                   <MapPin className="w-4 h-4" />
                   <h2>Campus Location &amp; Geofence Status</h2>
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full bg-[#EBF5EE] text-[#1F7A4D] text-[12px] font-bold">
-                  {zoneName}
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold ${
+                    geofence.status.state === 'verified'
+                      ? 'bg-[#EBF5EE] text-[#1F7A4D]'
+                      : geofence.status.state === 'locating' || geofence.status.state === 'idle'
+                      ? 'bg-[#DCE6F5] text-[#0B2A5B]'
+                      : 'bg-[#FCEBEB] text-[#A32121]'
+                  }`}
+                >
+                  {GEOFENCE_STATE_LABELS[geofence.status.state]}
                 </span>
               </div>
-              <p className="text-[13px] text-[var(--text-secondary)]">
-                Pulse works only when physically on the UPSA campus or within hostel zones. Your raw coordinates are discarded immediately after check.
+              <p className="text-[13px] text-[var(--text-secondary)]" role="status">
+                {geofence.status.state === 'verified'
+                  ? `You are in ${geofence.status.zoneName ?? zoneName}. Your pass renews automatically${
+                      geofence.status.verifiedUntil
+                        ? ` (current pass valid until ${new Date(geofence.status.verifiedUntil).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })})`
+                        : ''
+                    }.`
+                  : geofence.status.message ??
+                    (locationAllowed
+                      ? 'Pulse is checking your position in the background and will unlock the feed automatically.'
+                      : 'Allow location access and Pulse will verify you are on campus automatically.')}
+              </p>
+              <p className="text-[12px] text-[var(--text-secondary)]">
+                Checks run in the background while the app is open. Your raw coordinates are discarded
+                immediately after each check.
               </p>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
@@ -3439,7 +3561,7 @@ export function PulseApp() {
                   className="min-h-[40px] px-3.5 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold hover:bg-[#1C4A8F] cursor-pointer inline-flex items-center gap-2"
                 >
                   <MapPin className="w-4 h-4" />
-                  <span>Verify Location (Live GPS)</span>
+                  <span>{locationAllowed ? 'Check again now' : 'Allow location access'}</span>
                 </button>
                 <button
                   type="button"
@@ -3451,39 +3573,7 @@ export function PulseApp() {
               </div>
             </div>
 
-            {/* Student Welfare & Crisis Support — 24/7 (MOD-2) */}
-            <div className="bg-[var(--surface-card)] border border-[#A32121]/30 rounded-[8px] p-5 space-y-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 text-[#A32121] font-bold text-[15px]">
-                  <HeartHandshake className="w-4 h-4" />
-                  <h2>Student Welfare &amp; Crisis Support (24/7)</h2>
-                </div>
-                <span className="px-2.5 py-0.5 rounded-full bg-[#FCEBEB] text-[#A32121] text-[12px] font-bold">
-                  Confidential
-                </span>
-              </div>
-              <p className="text-[13px] text-[var(--text-secondary)]">
-                Immediate confidential support for students experiencing emotional distress, academic burnout, or personal crises.
-              </p>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setSupportCardOpen(true)}
-                  className="min-h-[40px] px-3.5 rounded-[8px] bg-[#A32121] text-white text-[13px] font-semibold hover:bg-[#821818] cursor-pointer inline-flex items-center gap-2"
-                >
-                  <HeartHandshake className="w-4 h-4" />
-                  <span>Open Crisis Resources &amp; Hotlines</span>
-                </button>
-                <a
-                  href="tel:0800678678"
-                  className="min-h-[40px] px-3.5 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] inline-flex items-center gap-1.5"
-                >
-                  <span>Ghana Mental Health: 0800 678 678</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Hardware Device Security (F2) */}
+            {/* Hardware Device Security */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 text-[var(--text-heading)] font-bold text-[15px]">
@@ -3780,6 +3870,22 @@ export function PulseApp() {
                   />
                 </div>
               </div>
+              <div>
+                <label
+                  htmlFor="delete-reason-input"
+                  className="block text-[13px] font-semibold mb-1 text-[var(--text-heading)]"
+                >
+                  Reason for deleting account (optional feedback)
+                </label>
+                <textarea
+                  id="delete-reason-input"
+                  rows={2}
+                  placeholder="Tell us why you want to delete your account (e.g. graduating, privacy concerns, not active)..."
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  className="w-full p-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[14px] text-[var(--text-primary)]"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={deleteConfirmText !== 'DELETE' || deleteOtp.length !== 6}
@@ -4062,47 +4168,7 @@ export function PulseApp() {
         </div>
       )}
 
-      {/* Self-Harm Support Card — MOD-2 & Design Brief Section 5 */}
-      {supportCardOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="support-card-title"
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-        >
-          <div className="bg-[var(--surface-card)] text-[var(--text-primary)] w-full max-w-[480px] rounded-[8px] border-2 border-[#0B2A5B] p-6 space-y-4">
-            <div className="inline-flex items-center gap-2 text-[#0B2A5B] font-bold text-[15px]">
-              <HeartHandshake className="w-5 h-5 text-[#8A6200]" aria-hidden="true" />
-              <span>Support is available on campus</span>
-            </div>
-            <h2
-              id="support-card-title"
-              className="text-[20px] leading-[26px] font-bold text-[var(--text-heading)]"
-            >
-              You do not have to carry this alone
-            </h2>
-            <p className="text-[15px] leading-[22px] text-[var(--text-secondary)]">
-              If you or someone you know at UPSA is going through severe distress or thoughts of
-              self-harm, confidential help is available through the university counselling team:
-            </p>
-            <div className="bg-[#FBF3DC] text-[#1B2433] border border-[#D9A21B] rounded-[8px] p-4 space-y-1.5 text-[14px]">
-              <p className="font-bold">UPSA Guidance and Counselling Unit [D7]</p>
-              <p>Location: Student Centre Building, Ground Floor, UPSA Main Campus</p>
-              <p>Hours: Monday – Friday, 08:00 – 17:00 (Walk-in or confidential booking)</p>
-              <p>Ghana National Helpline / Emergency: 112 / 0800-678-678</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSupportCardOpen(false)}
-              className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] cursor-pointer"
-            >
-              Return to Feed
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Approve This Device Modal — AUTH-3 & Flow F2 */}
+      {/* Approve This Device Modal */}
       {pendingDeviceModalOpen && (
         <div
           role="dialog"
@@ -4115,7 +4181,7 @@ export function PulseApp() {
               id="approve-device-title"
               className="text-[20px] leading-[26px] font-bold text-[var(--text-heading)]"
             >
-              Approve this device (Flow F2)
+              Approve this device
             </h2>
             <p className="text-[15px] leading-[22px] text-[var(--text-secondary)]">
               Your UPSA account is already signed in on another phone or browser. For campus account
@@ -4157,7 +4223,7 @@ export function PulseApp() {
         </div>
       )}
 
-      {/* Blocking Legal Document Version Re-Acceptance Sheet — LEGAL-1 & Flow F14 */}
+      {/* Blocking Legal Document Version Re-Acceptance Sheet */}
       {(legalUpdateModalOpen ||
         (profileSummary?.pendingLegalUpdates &&
           profileSummary.pendingLegalUpdates.length > 0)) && (
@@ -4169,7 +4235,7 @@ export function PulseApp() {
         >
           <div className="bg-[var(--surface-card)] text-[var(--text-primary)] w-full max-w-[520px] rounded-[8px] border-2 border-[#0B2A5B] p-6 space-y-4">
             <div className="text-[12px] font-bold uppercase tracking-wider text-[#8A6200]">
-              Action Required · Legal Update (Flow F14)
+              Action Required · Legal Update
             </div>
             <h2
               id="legal-update-title"
@@ -4319,6 +4385,47 @@ export function PulseApp() {
           </button>
         </div>
       </nav>
+
+      {/* Real-time In-App Push-Up Notification Toast */}
+      {pushUpNotification && (
+        <aside
+          role="alert"
+          aria-live="polite"
+          className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] w-[420px] bg-[#0B2A5B] text-white rounded-[12px] p-4 shadow-2xl border-2 border-[#1C4A8F] flex items-start gap-3 transition-all cursor-pointer hover:bg-[#13376E]"
+          onClick={() => {
+            if (pushUpNotification.postId) {
+              setActiveTab('feed');
+              setActiveThreadId(pushUpNotification.postId);
+              void loadThread(pushUpNotification.postId);
+              void markNotificationsForPostAsRead(pushUpNotification.postId);
+            }
+            setPushUpNotification(null);
+          }}
+        >
+          <div className="w-8 h-8 rounded-full bg-[#1C4A8F] flex items-center justify-center shrink-0 text-[#D9A21B]">
+            <Bell className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-[14px] leading-tight flex items-center justify-between">
+              <span className="truncate">{pushUpNotification.title}</span>
+              <span className="text-[11px] text-white/60 uppercase font-semibold tracking-wider ml-2">Now</span>
+            </div>
+            <p className="text-[13px] text-white/90 line-clamp-2 mt-0.5">{pushUpNotification.message}</p>
+            <div className="text-[11px] text-[#D9A21B] font-semibold mt-1">Tap to open reply &bull; Marks as read</div>
+          </div>
+          <button
+            type="button"
+            aria-label="Dismiss notification"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPushUpNotification(null);
+            }}
+            className="text-white/60 hover:text-white p-1 rounded-full cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </aside>
+      )}
     </div>
   );
 }
