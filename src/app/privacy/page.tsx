@@ -17,11 +17,9 @@ export default function PrivacyPage() {
           1. Controller and Ghana Data Protection Act (Act 843) notice
         </h2>
         <p>
-          UPSA Pulse processes personal data of verified students in Ghana in accordance with the
-          Ghana Data Protection Act, 2012 (Act 843) (statutory provisions flagged for formal review
-          by qualified Ghanaian legal counsel prior to public launch). Data controller
-          responsibility is held by Codey Dev pending formal institutional sponsorship [DECISION
-          D1].
+          UPSA Pulse processes personal data of verified students in accordance with the
+          Ghana Data Protection Act, 2012 (Act 843). Data controller responsibility is held by
+          the UPSA Pulse operations team in partnership with student campus governance.
         </p>
       </section>
 

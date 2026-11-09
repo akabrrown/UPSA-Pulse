@@ -18,7 +18,7 @@ import {
   togglePostReactionInStore,
 } from '@/lib/store/pulse-store';
 
-describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 & 9)', () => {
+describe('UPSA Pulse End-to-End Store & API Contract Invariants', () => {
   const studentEfua = '11111111-1111-4111-8111-111111111111';
   const studentKojo = '22222222-2222-4222-8222-222222222222';
   const studentAma = '33333333-3333-4333-8333-333333333333';
@@ -201,7 +201,7 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
     expect(feed.items.some((p) => p.id === post.id)).toBe(false);
   });
 
-  it('blocks moderator from moderating a thread they participated in (App Flow Section 6 conflict-of-interest)', () => {
+  it('blocks moderator from moderating a thread they participated in (conflict of interest)', () => {
     verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
     verifyUserZoneInStore(moderatorUser, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
 

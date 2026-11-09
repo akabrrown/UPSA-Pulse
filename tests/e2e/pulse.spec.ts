@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('UPSA Pulse E2E Journeys (TDD Section 12 & App Flow F1–F16)', () => {
+test.describe('UPSA Pulse E2E User Journeys', () => {
   test('renders campus feed in UPSA Blue & Gold, opens thread, replies with alias, and navigates legal pages', async ({
     page,
   }) => {

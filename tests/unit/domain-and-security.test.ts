@@ -20,7 +20,7 @@ import {
 } from '@/lib/validation/schemas';
 
 describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
-  describe('Hot Score Ranking Formula (TDD Section 7)', () => {
+  describe('Hot Score Ranking Decay Formula', () => {
     it('computes (max(score, 0) + 1) / (age_hours + 2)^1.5 accurately', () => {
       const now = new Date('2026-11-04T12:00:00Z');
       const createdAt = new Date('2026-11-04T10:00:00Z'); // 2 hours old
@@ -65,7 +65,7 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
     });
   });
 
-  describe('Zone Verification & Coordinate Non-Persistence (ZONE-1..3, TDD Section 4)', () => {
+  describe('Zone Verification & Coordinate Non-Persistence', () => {
     it('accepts coordinates inside UPSA campus polygon with accuracy <= 150m', () => {
       const res = verifyZonePoint({ lat: 5.6605, lng: -0.1662, accuracy: 45 });
       expect(res.verified).toBe(true);
@@ -115,7 +115,7 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
     });
   });
 
-  describe('Thread-Local Aliases & Geometric Glyphs (REPLY-1, Design Brief 4.2)', () => {
+  describe('Thread-Local Aliases & Geometric Glyphs', () => {
     it('formats alias_no 0 as OP and positive integers as Student n', () => {
       expect(formatThreadAlias(0)).toBe('OP');
       expect(formatThreadAlias(1)).toBe('Student 1');

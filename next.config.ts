@@ -16,10 +16,6 @@ const cspHeader = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
-  webpack: (config) => {
-    config.cache = false;
-    return config;
-  },
   async headers() {
     return [
       {

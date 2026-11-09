@@ -1168,18 +1168,18 @@ export default function AdminQueuePage() {
           </div>
         </section>
 
-        {/* Restricted Two-Person Unmask Gate — MOD-3 & F16 */}
+        {/* Restricted Two-Person Unmask Gate */}
         <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-4">
           <div className="flex items-center gap-2 text-[#8A6200] font-bold text-[15px]">
             <Lock className="w-4 h-4" aria-hidden="true" />
             <h2>Restricted Two-Person Author Unmask</h2>
           </div>
           <p className="text-[14px] text-[var(--text-secondary)]">
-            Disabled by default until formal written policy approval [DECISION D6]. When enabled via{' '}
-            <code>UNMASK_ENABLED=true</code>, Holder A submits a written basis (
+            Disabled by default until formal administrative policy approval. When enabled via{' '}
+            <code>UNMASK_ENABLED=true</code>, Holder A submits an authorized statutory basis (
             <code>legal_request</code>, <code>credible_threat</code>, or{' '}
             <code>upsa_disciplinary_referral</code>) and Holder B (a distinct account with{' '}
-            <code>can_unmask</code>) must independently approve.
+            <code>can_unmask</code>) must independently review and approve.
           </p>
 
           <form onSubmit={handleRequestUnmask} className="grid grid-cols-1 sm:grid-cols-2 gap-3">

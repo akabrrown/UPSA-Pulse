@@ -17,11 +17,10 @@ export default function TermsPage() {
           1. Independent status and eligibility
         </h2>
         <p>
-          UPSA Pulse (working title) is an independent, location-gated campus feed operated by
-          Codey Dev for verified students. Unless formally endorsed in writing, it is not an
-          official publication or administrative channel of the University of Professional Studies,
-          Accra (UPSA). You must be at least 18 years old and hold an active, allow-listed UPSA
-          student email address to create an account.
+          UPSA Pulse is an independent, location-gated campus feed operated for verified students.
+          Unless formally endorsed in writing, it is not an official administrative channel of the
+          University of Professional Studies, Accra (UPSA). You must be an enrolled UPSA student
+          holding an active student index number and allow-listed university email to create an account.
         </p>
       </section>
 

@@ -119,7 +119,7 @@ export function mapDomainErrorToResponse(err: unknown) {
     case 'unmask_disabled_by_policy':
       return apiError(
         'unmask_disabled_by_policy',
-        'Author unmasking is disabled until formal written policy approval [DECISION D6].',
+        'Author unmasking is disabled until formal administrative policy approval.',
         403
       );
     case 'two_person_rule_violation':
