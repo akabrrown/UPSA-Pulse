@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { apiSuccess, clearSessionCookie } from '@/lib/api-helpers';
 
 export async function POST() {

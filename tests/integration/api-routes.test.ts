@@ -54,6 +54,55 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants (TDD Section 6 &
     expect(campusFeed.items.some((p) => p.id === post.id)).toBe(true);
   });
 
+  it('allows verified students in private hostels (Madina, Haatso) and at home during vacation 24/7 access to post, read, reply, and vote', () => {
+    // Student Kojo is in a private hostel in Madina outside campus bounds (lat: 5.6740, lng: -0.1610)
+    const madinaVerification = verifyUserZoneInStore(studentKojo, { lat: 5.674, lng: -0.161, accuracy: 35 });
+    expect(madinaVerification.verified).toBe(true);
+    expect(madinaVerification.zoneId).toBe(5);
+    expect(madinaVerification.zoneName).toBe('Private Hostels & Off-Campus');
+
+    // Post to Private Hostels & Off-Campus (Zone 5)
+    const hostelPost = createPostInStore(studentKojo, {
+      zoneId: 5,
+      channelId: 2, // Hostels & Housing
+      kind: 'post',
+      body: 'Madina hostel bus is loading at the junction now for anyone heading home.',
+    });
+    expect(hostelPost.zoneId).toBe(5);
+    expect(hostelPost.zoneName).toBe('Private Hostels & Off-Campus');
+
+    // Student Ama is at home during vacation (lat: 5.5560, lng: -0.1969)
+    const vacationVerification = verifyUserZoneInStore(studentAma, { lat: 5.556, lng: -0.1969, accuracy: 40 });
+    expect(vacationVerification.verified).toBe(true);
+    expect(vacationVerification.zoneId).toBe(5);
+
+    // Student Ama posts to Vacation & Recess Lounge (Zone 6)
+    const vacationPost = createPostInStore(studentAma, {
+      zoneId: 6,
+      channelId: 6, // General
+      kind: 'post',
+      body: 'Anyone doing remote internships during this long vacation? Let us share tips here!',
+    });
+    expect(vacationPost.zoneId).toBe(6);
+    expect(vacationPost.zoneName).toBe('Vacation & Recess Lounge');
+
+    // Student Efua (on campus) can read posts from Private Hostels and Vacation Lounge
+    verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
+    const offCampusFeed = getFeedFromStore({ userId: studentEfua, sort: 'new', zoneId: 5 });
+    expect(offCampusFeed.items.some((p) => p.id === hostelPost.id)).toBe(true);
+
+    const vacationFeed = getFeedFromStore({ userId: studentEfua, sort: 'new', zoneId: 6 });
+    expect(vacationFeed.items.some((p) => p.id === vacationPost.id)).toBe(true);
+
+    // Replying and voting across off-campus posts works seamlessly
+    const reply = createReplyInStore(studentEfua, vacationPost.id, 'Taking a Coursera data analytics course!');
+    expect(reply.aliasNo).toBe(1);
+
+    const vote = castVoteInStore(studentEfua, { targetType: 'post', targetId: vacationPost.id, value: 1 });
+    expect(vote.score).toBe(1);
+    expect(vote.myVote).toBe(1);
+  });
+
   it('allocates sequential per-thread aliases (OP=0, Student 1, Student 2) and reuses alias when same user replies twice', () => {
     verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
     verifyUserZoneInStore(studentKojo, { lat: 5.6605, lng: -0.1662, accuracy: 30 });

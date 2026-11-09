@@ -283,6 +283,26 @@ export const DEFAULT_UPSA_ZONES: ZonePolygonConfig[] = [
     isActive: true,
     coordinates: UPSA_HOSTEL_C_RING,
   },
+  {
+    id: 5,
+    name: 'Private Hostels & Off-Campus',
+    minLat: -90,
+    maxLat: 90,
+    minLng: -180,
+    maxLng: 180,
+    maxAccuracyMeters: 5000,
+    isActive: true,
+  },
+  {
+    id: 6,
+    name: 'Vacation & Recess Lounge',
+    minLat: -90,
+    maxLat: 90,
+    minLng: -180,
+    maxLng: 180,
+    maxAccuracyMeters: 5000,
+    isActive: true,
+  },
 ];
 
 export const DEFAULT_UPSA_ZONE: ZonePolygonConfig = DEFAULT_UPSA_ZONES[0]!;
@@ -491,16 +511,12 @@ export function verifyZonePoint(
   verifiedUntil?: string;
   reason: 'ok' | 'accuracy_too_low' | 'not_in_zone';
 } {
-  const activeZones = zones.filter((z) => z.isActive);
+  const activePhysicalZones = zones.filter(
+    (z) => z.isActive && z.coordinates && z.coordinates.length >= 4
+  );
 
-  for (const zone of activeZones) {
-    const insidePolygon =
-      zone.coordinates && zone.coordinates.length >= 4
-        ? isPointInRingOrBuffer(reading.lat, reading.lng, zone.coordinates, 25)
-        : reading.lat >= zone.minLat &&
-          reading.lat <= zone.maxLat &&
-          reading.lng >= zone.minLng &&
-          reading.lng <= zone.maxLng;
+  for (const zone of activePhysicalZones) {
+    const insidePolygon = isPointInRingOrBuffer(reading.lat, reading.lng, zone.coordinates!, 25);
 
     if (insidePolygon) {
       if (reading.accuracy > zone.maxAccuracyMeters) {

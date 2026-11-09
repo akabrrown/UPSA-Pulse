@@ -554,7 +554,9 @@ function requireActiveZoneUser(userId: string): ProfileRecord {
     !profile.zoneVerifiedUntil ||
     new Date(profile.zoneVerifiedUntil).getTime() <= Date.now()
   ) {
-    throw new Error('zone_not_verified');
+    // Active verified student seamlessly falls back to off-campus private hostel/vacation access
+    profile.zoneId = profile.zoneId ?? 5;
+    profile.zoneVerifiedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   }
   return profile;
 }
@@ -627,8 +629,33 @@ export function verifyUserZoneInStore(
     profile.zoneId = check.zoneId;
     profile.zoneVerifiedUntil = check.verifiedUntil;
     profile.lastSeenOn = new Date().toISOString().slice(0, 10);
+    return check;
   }
-  return check;
+
+  if (check.reason === 'accuracy_too_low') {
+    return check;
+  }
+
+  // Active verified student located outside physical campus perimeters (e.g. private hostel or vacation home)
+  // is granted 24-hour Private Hostels & Off-Campus presence so they are never locked out of the feed
+  const offCampusZone = state.zones.find((z) => z.id === 5) ?? {
+    id: 5,
+    name: 'Private Hostels & Off-Campus',
+    maxAccuracyMeters: 5000,
+    isActive: true,
+  };
+  const verifiedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  profile.zoneId = offCampusZone.id;
+  profile.zoneVerifiedUntil = verifiedUntil;
+  profile.lastSeenOn = new Date().toISOString().slice(0, 10);
+
+  return {
+    verified: true,
+    zoneId: offCampusZone.id,
+    zoneName: offCampusZone.name,
+    verifiedUntil,
+    reason: 'ok' as const,
+  };
 }
 
 export function getChannelsFromStore(): ChannelRecord[] {

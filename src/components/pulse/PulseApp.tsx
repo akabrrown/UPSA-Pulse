@@ -53,16 +53,16 @@ const DEVICE_TOKEN_STORAGE_KEY = 'upsa_pulse_device_token';
 const LOCATION_ALLOWED_STORAGE_KEY = 'upsa_pulse_location_allowed';
 
 const GEOFENCE_STATE_LABELS: Record<GeofenceStatus['state'], string> = {
-  idle: 'Not checking',
+  idle: 'Connected',
   locating: 'Locating…',
   verified: 'On campus',
-  outside: 'Outside campus',
-  weak_signal: 'Weak GPS signal',
-  denied: 'Location blocked',
-  unavailable: 'No GPS fix',
-  unsupported: 'Unsupported browser',
+  outside: 'Private Hostel / Off-Campus',
+  weak_signal: 'Indoor GPS (Off-Campus Active)',
+  denied: 'Location Blocked (Off-Campus Active)',
+  unavailable: 'No GPS fix (Off-Campus Active)',
+  unsupported: 'Off-Campus Active',
   auth_required: 'Sign in required',
-  error: 'Retrying',
+  error: 'Connected (Verified Student)',
 };
 
 const DEV_SIMULATED_POSITIONS: Array<{
@@ -72,6 +72,8 @@ const DEV_SIMULATED_POSITIONS: Array<{
   { label: 'Main Campus', coords: { lat: 5.6612, lng: -0.1661, accuracy: 20 } },
   { label: 'Hostel A & B', coords: { lat: 5.6588, lng: -0.1706, accuracy: 20 } },
   { label: 'Hostel C', coords: { lat: 5.6576, lng: -0.1676, accuracy: 20 } },
+  { label: 'Private Hostel (Madina)', coords: { lat: 5.6740, lng: -0.1610, accuracy: 30 } },
+  { label: 'Vacation / Home', coords: { lat: 5.5560, lng: -0.1969, accuracy: 40 } },
 ];
 
 function getBrowserDeviceToken(): string | undefined {
@@ -215,6 +217,8 @@ export function PulseApp() {
     { id: 2, name: 'Hostel A' },
     { id: 3, name: 'Hostel B' },
     { id: 4, name: 'Hostel C' },
+    { id: 5, name: 'Private Hostels & Off-Campus' },
+    { id: 6, name: 'Vacation & Recess Lounge' },
   ]);
   const [channels, setChannels] = useState<ChannelRecord[]>([]);
   const [posts, setPosts] = useState<PublicPostView[]>([]);
@@ -2162,10 +2166,14 @@ export function PulseApp() {
             )}
             <button
               type="button"
-              onClick={() => setOnboardingStage('outside_zone')}
-              className="w-full min-h-[44px] rounded-[8px] border border-[var(--border-color)] font-semibold text-[15px] text-[var(--text-secondary)] cursor-pointer"
+              onClick={() => {
+                setOnboardingStage('none');
+                setComposeStatusToast('Connected as Verified Student (Private Hostels & Off-Campus)');
+                void loadFeed();
+              }}
+              className="w-full min-h-[44px] rounded-[8px] border border-[var(--border-color)] font-semibold text-[15px] text-[var(--text-secondary)] hover:bg-[var(--surface-subtle)] cursor-pointer"
             >
-              Not now
+              Skip for now (Off-Campus / Private Hostels)
             </button>
           </div>
         </div>
@@ -2177,25 +2185,37 @@ export function PulseApp() {
     return (
       <div className="min-h-screen bg-[var(--surface-app)] text-[var(--text-primary)] max-w-[640px] mx-auto px-4 py-8 space-y-6">
         <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-full text-[12px] font-bold bg-[#EBF5EE] text-[#1F7A4D]">
+              Verified Student Membership 24/7/365
+            </span>
+          </div>
           <h1 className="text-[22px] leading-[28px] font-bold text-[var(--text-heading)]">
-            Outside the UPSA Campus Zone
+            Private Hostels, Off-Campus &amp; Vacation Access
           </h1>
-          <p className="text-[16px] leading-[24px] text-[var(--text-primary)]" role="status">
-            {geofence.status.message ??
-              'Pulse only works on and around the UPSA campus. Move closer and try again.'}
+          <p className="text-[15px] leading-[22px] text-[var(--text-primary)]">
+            UPSA Pulse connects all verified students whether you are in on-campus halls, private hostels (Madina, Haatso, Atomic, Agbogba, Adenta, East Legon), commuting, or at home during semester breaks.
           </p>
-          <p className="text-[14px] text-[var(--text-secondary)]">
-            Pulse keeps checking your position in the background and unlocks the feed as soon as you
-            are inside a campus zone. If you are indoors with weak GPS accuracy (&gt;150 m), step near
-            an open walkway or window.
+          <p className="text-[13px] text-[var(--text-secondary)]">
+            When you are physically on campus, your presence automatically upgrades to the green <strong>On campus</strong> badge. When off-campus, you retain full 24/7 access to read, post, reply, and vote across all places.
           </p>
           <div className="flex flex-wrap gap-2.5 pt-2">
             <button
               type="button"
-              onClick={handleLiveGpsCheck}
-              className="min-h-[44px] px-4 rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[14px] hover:bg-[#1C4A8F] cursor-pointer"
+              onClick={() => {
+                setOnboardingStage('none');
+                void loadFeed();
+              }}
+              className="min-h-[44px] px-5 rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[14px] hover:bg-[#1C4A8F] cursor-pointer"
             >
-              {locationAllowed ? 'Check my location now' : 'Allow location & check'}
+              Enter Campus Feed
+            </button>
+            <button
+              type="button"
+              onClick={handleLiveGpsCheck}
+              className="min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] text-[#0B2A5B] font-semibold text-[14px] hover:bg-[var(--surface-subtle)] cursor-pointer"
+            >
+              {locationAllowed ? 'Check Campus GPS Presence' : 'Verify On-Campus GPS Badge'}
             </button>
             {process.env.NODE_ENV !== 'production' &&
               DEV_SIMULATED_POSITIONS.map((point) => (
@@ -2205,6 +2225,7 @@ export function PulseApp() {
                   onClick={() => {
                     allowLocation();
                     geofence.injectPosition(point.coords);
+                    setOnboardingStage('none');
                   }}
                   className="min-h-[44px] px-4 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] font-semibold text-[14px] cursor-pointer"
                 >
@@ -2217,7 +2238,7 @@ export function PulseApp() {
                 setOnboardingStage('none');
                 setActiveTab('me');
               }}
-              className="min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] font-semibold text-[14px] text-[var(--text-heading)] cursor-pointer"
+              className="min-h-[44px] px-4 rounded-[8px] border border-[var(--border-color)] font-semibold text-[14px] text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] cursor-pointer"
             >
               Open Me &amp; Account Settings
             </button>
@@ -3473,28 +3494,18 @@ export function PulseApp() {
                   className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold ${
                     geofence.status.state === 'verified'
                       ? 'bg-[#EBF5EE] text-[#1F7A4D]'
-                      : geofence.status.state === 'locating' || geofence.status.state === 'idle'
-                      ? 'bg-[#DCE6F5] text-[#0B2A5B]'
-                      : 'bg-[#FCEBEB] text-[#A32121]'
+                      : 'bg-[#DCE6F5] text-[#0B2A5B]'
                   }`}
                 >
-                  {GEOFENCE_STATE_LABELS[geofence.status.state]}
+                  {geofence.status.state === 'verified'
+                    ? (geofence.status.zoneName ?? 'On campus')
+                    : GEOFENCE_STATE_LABELS[geofence.status.state]}
                 </span>
               </div>
               <p className="text-[13px] text-[var(--text-secondary)]" role="status">
                 {geofence.status.state === 'verified'
-                  ? `You are in ${geofence.status.zoneName ?? zoneName}. Your pass renews automatically${
-                      geofence.status.verifiedUntil
-                        ? ` (current pass valid until ${new Date(geofence.status.verifiedUntil).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })})`
-                        : ''
-                    }.`
-                  : geofence.status.message ??
-                    (locationAllowed
-                      ? 'Pulse is checking your position in the background and will unlock the feed automatically.'
-                      : 'Allow location access and Pulse will verify you are on campus automatically.')}
+                  ? `You are connected from ${geofence.status.zoneName ?? zoneName}. Full 24/7 student posting and voting permissions are active.`
+                  : 'You have full 24/7 verified student access across UPSA campus, private hostels (Madina, Haatso, Adenta), and vacation lounge.'}
               </p>
               <p className="text-[12px] text-[var(--text-secondary)]">
                 Checks run in the background while the app is open. Your raw coordinates are discarded

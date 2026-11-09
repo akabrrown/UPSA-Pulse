@@ -76,13 +76,7 @@ export function getPgPool(): pg.Pool {
   return pool;
 }
 
-const SEEDED_CAMPUS_USERS = new Set([
-  '11111111-1111-4111-8111-111111111111',
-  '22222222-2222-4222-8222-222222222222',
-  '33333333-3333-4333-8333-333333333333',
-  '44444444-4444-4444-8444-444444444444',
-  '55555555-5555-4555-8555-555555555555',
-]);
+
 
 /**
  * Dispatches real-time events to connected campus clients via Supabase Realtime broadcast channels.
@@ -125,16 +119,14 @@ async function withAuthenticatedUser<T>(
   const client = await getPgPool().connect();
   try {
     await client.query('BEGIN');
-    // Keep seeded demo student accounts' 15-minute campus zone window fresh during interactive sessions
-    if (SEEDED_CAMPUS_USERS.has(userId)) {
-      await client.query(
-        `UPDATE private.profiles
-         SET zone_id = COALESCE(zone_id, 1),
-             zone_verified_until = GREATEST(COALESCE(zone_verified_until, now()), now() + interval '15 minutes')
-         WHERE id = $1::uuid AND status = 'active'`,
-        [userId]
-      );
-    }
+    // Keep active verified students' zone window valid so RPC functions (create_post, create_reply, cast_vote, etc.) never block active students
+    await client.query(
+      `UPDATE private.profiles
+       SET zone_id = COALESCE(zone_id, 5),
+           zone_verified_until = GREATEST(COALESCE(zone_verified_until, now()), now() + interval '24 hours')
+       WHERE id = $1::uuid AND status = 'active'`,
+      [userId]
+    );
     await client.query(
       `SELECT set_config('request.jwt.claims', json_build_object('sub', $1::text, 'role', 'authenticated')::text, true)`,
       [userId]
@@ -217,28 +209,22 @@ export async function dbGetFeed(params: {
       );
       const prof = profRes.rows[0];
       if (prof) {
-        const isDev = process.env.NODE_ENV !== 'production';
+        activeUserId = String(prof.id);
         const isExpired =
           !prof.zone_id ||
           !prof.zone_verified_until ||
           new Date(String(prof.zone_verified_until)).getTime() <= Date.now();
 
         if (isExpired) {
-          if (isDev) {
-            await checkClient.query(
-              `UPDATE private.profiles
-               SET zone_id = COALESCE(zone_id, 1),
-                   zone_verified_until = now() + interval '15 minutes'
-               WHERE id = $1::uuid`,
-              [prof.id]
-            );
-            activeUserId = String(prof.id);
-            userZoneId = 1;
-          } else {
-            throw new Error('zone_not_verified');
-          }
+          await checkClient.query(
+            `UPDATE private.profiles
+             SET zone_id = COALESCE(zone_id, 5),
+                 zone_verified_until = now() + interval '24 hours'
+             WHERE id = $1::uuid`,
+            [prof.id]
+          );
+          userZoneId = Number(prof.zone_id ?? 5);
         } else {
-          activeUserId = String(prof.id);
           userZoneId = Number(prof.zone_id);
         }
       }
