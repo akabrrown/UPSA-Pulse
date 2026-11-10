@@ -302,15 +302,22 @@ export default function AdminQueuePage() {
     action: 'dismiss' | 'hide' | 'suspend'
   ) => {
     const reason = reasonMap[item.targetId] || 'Violates community guidelines';
+    const actionMap: Record<string, 'dismiss_report' | 'remove' | 'suspend'> = {
+      dismiss: 'dismiss_report',
+      hide: 'remove',
+      suspend: 'suspend',
+    };
+    const mappedAction = actionMap[action] ?? 'dismiss_report';
+
     const res = await fetch('/api/admin/actions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         targetType: item.targetType,
         targetId: item.targetId,
-        action,
+        action: mappedAction,
         reason,
-        suspensionDurationHours: action === 'suspend' ? 168 : undefined,
+        suspendDays: action === 'suspend' ? 7 : undefined,
       }),
     });
     const json = await res.json();
@@ -329,7 +336,8 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        addKeywordRule: {
+        section: 'keyword_rule',
+        payload: {
           pattern: newKeywordPattern.trim(),
           category: newKeywordCategory,
           matchType: 'contains',
@@ -353,7 +361,10 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        addAllowedDomain: newDomain.trim().toLowerCase(),
+        section: 'allowed_domain',
+        payload: {
+          domain: newDomain.trim().toLowerCase(),
+        },
       }),
     });
     const json = await res.json();
@@ -371,8 +382,9 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        zoneAccuracyGate: {
-          zoneId: configSummary?.zones?.[0]?.id ?? 1,
+        section: 'zone',
+        payload: {
+          id: configSummary?.zones?.[0]?.id ?? 1,
           maxAccuracyMeters: maxAccuracyInput,
         },
       }),
@@ -391,7 +403,8 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        toggleZoneActive: { zoneId, isActive },
+        section: 'zone',
+        payload: { id: zoneId, isActive },
       }),
     });
     const json = await res.json();
@@ -412,10 +425,12 @@ export default function AdminQueuePage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          addZoneGeoJson: {
+          section: 'zone',
+          payload: {
             name: newPlaceName.trim(),
             maxAccuracyMeters: newPlaceAccuracy,
-            geoJson: parsed,
+            geojson: parsed,
+            isActive: true,
           },
         }),
       });
@@ -441,8 +456,9 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        updateChannel: {
-          channelId,
+        section: 'channel',
+        payload: {
+          id: channelId,
           ...updates,
         },
       }),
@@ -463,7 +479,8 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        addChannel: {
+        section: 'channel',
+        payload: {
           name: newChannelName.trim(),
           slug: newChannelSlug.trim() || newChannelName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
           description: newChannelDescription.trim() || undefined,
@@ -496,7 +513,8 @@ export default function AdminQueuePage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        addChannel: {
+        section: 'channel',
+        payload: {
           ...preset,
           isActive: true,
         },
@@ -1201,7 +1219,7 @@ export default function AdminQueuePage() {
                             key={app.id}
                             className="p-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] flex items-center justify-between flex-wrap gap-3 text-[13px]"
                           >
-                            <div>
+                            <div className="flex-1 min-w-[200px]">
                               <div className="font-bold text-[var(--text-heading)]">
                                 Appeal #{app.id} · Original Action #{app.original_action_id}
                               </div>
@@ -1209,9 +1227,21 @@ export default function AdminQueuePage() {
                                 &ldquo;{app.message}&rdquo;
                               </div>
                             </div>
-                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/15 text-amber-700">
-                              {app.status}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/15 text-amber-700">
+                                {app.status}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAppealIdInput(String(app.id));
+                                  setFeedback(`Selected Appeal #${app.id} for review.`);
+                                }}
+                                className="px-2.5 py-1 rounded bg-[#0B2A5B] hover:bg-[#133875] text-[#D9A21B] text-[11px] font-semibold cursor-pointer border border-[#1C4A8F]"
+                              >
+                                Select for Review
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2117,6 +2147,60 @@ export default function AdminQueuePage() {
                 {unmaskOutcome && (
                   <div className="p-3.5 rounded-[8px] bg-[var(--surface-subtle)] text-[13px] font-semibold text-[#0B2A5B] border border-[#1C4A8F]/30">
                     {unmaskOutcome}
+                  </div>
+                )}
+
+                {/* List of Recent Statutory Unmask Requests */}
+                {configSummary?.unmaskRequests && configSummary.unmaskRequests.length > 0 && (
+                  <div className="space-y-3 pt-3 border-t border-[var(--border-color)]">
+                    <div className="text-[13px] font-bold text-[var(--text-heading)]">
+                      Recent Statutory Unmask Requests ({configSummary.unmaskRequests.length})
+                    </div>
+                    <div className="space-y-2">
+                      {configSummary.unmaskRequests.map((req) => (
+                        <div
+                          key={req.id}
+                          className="p-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] flex items-center justify-between flex-wrap gap-3 text-[13px]"
+                        >
+                          <div className="flex-1 min-w-[200px]">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-[var(--text-heading)]">
+                                Request #{req.id} · Ref: {req.reference}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  req.status === 'approved'
+                                    ? 'bg-[#1F7A4D]/15 text-[#1F7A4D]'
+                                    : req.status === 'rejected'
+                                      ? 'bg-red-500/15 text-red-700'
+                                      : 'bg-amber-500/15 text-amber-700'
+                                }`}
+                              >
+                                {req.status}
+                              </span>
+                            </div>
+                            <div className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+                              Basis: <strong>{req.basis}</strong> · Post: <code>{req.post_id.slice(0, 8)}...</code>
+                            </div>
+                            <div className="text-[12px] text-[var(--text-secondary)] italic mt-1">
+                              &ldquo;{req.reason}&rdquo;
+                            </div>
+                          </div>
+                          {req.status === 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUnmaskApproveId(String(req.id));
+                                setFeedback(`Selected Request #${req.id} for Holder B review.`);
+                              }}
+                              className="px-3 py-1.5 rounded bg-[#0B2A5B] hover:bg-[#133875] text-[#D9A21B] text-[12px] font-semibold cursor-pointer border border-[#1C4A8F]"
+                            >
+                              Review &amp; Approve
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </section>

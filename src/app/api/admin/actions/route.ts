@@ -6,7 +6,34 @@ import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const parsed = moderationActionSchema.safeParse(body);
+
+    // Resilient payload normalization: handle UI actions ('dismiss', 'hide', 'suspend')
+    let normalized = body;
+    if (typeof body === 'object' && body !== null) {
+      let action = body.action;
+      if (action === 'dismiss' || action === 'dismiss_flag') {
+        action = 'dismiss_report';
+      } else if (action === 'hide') {
+        action = 'remove';
+      }
+      let suspendDays = body.suspendDays;
+      if (action === 'suspend' && !suspendDays) {
+        if (body.suspensionDurationHours === 168 || !body.suspensionDurationHours) {
+          suspendDays = 7;
+        } else if (body.suspensionDurationHours === 24) {
+          suspendDays = 1;
+        } else {
+          suspendDays = 30;
+        }
+      }
+      normalized = {
+        ...body,
+        action,
+        ...(suspendDays !== undefined ? { suspendDays } : {}),
+      };
+    }
+
+    const parsed = moderationActionSchema.safeParse(normalized);
     if (!parsed.success) {
       return apiError(
         'invalid_input',

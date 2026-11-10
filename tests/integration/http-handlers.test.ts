@@ -24,6 +24,9 @@ import { POST as postAppeal, PATCH as patchAppeal } from '@/app/api/appeals/rout
 import { POST as postApproveDevice } from '@/app/api/devices/approve/route';
 import { GET as getAdminLookup } from '@/app/api/admin/lookup/route';
 import { GET as getAdminAudit } from '@/app/api/admin/audit/route';
+import { POST as postAdminActionAlias } from '@/app/api/admin/action/route';
+import { GET as getAdminCaseLookupAlias } from '@/app/api/admin/case-lookup/route';
+import { POST as postAdminAppealDecide, PATCH as patchAdminAppealDecide } from '@/app/api/admin/appeals/route';
 import { applyModerationActionInStore } from '@/lib/store/pulse-store';
 import { resetRateLimitsForTests } from '@/lib/domain/pulse-engine';
 
@@ -798,6 +801,169 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
       makeReq('http://localhost:3000/api/admin/audit', { userId: efua })
     );
     expect(forbiddenRes.status).toBe(403);
+  });
+
+  it('normalizes admin action UI payloads (dismiss, hide, suspend) and supports alias routes', async () => {
+    const moderator = '44444444-4444-4444-8444-444444444444';
+    const efua = '11111111-1111-4111-8111-111111111111';
+
+    // 0. Create a real post to moderate
+    const createRes = await createPost(
+      makeReq('http://localhost:3000/api/posts', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          channelId: 1,
+          kind: 'post',
+          body: 'Testing moderation action normalization with valid post target.',
+        },
+      })
+    );
+    expect(createRes.status).toBe(201);
+    const targetPostId = (await createRes.json()).data.post.id as string;
+
+    // 1. Test 'dismiss' normalized to 'dismiss_report'
+    const dismissRes = await postAdminAction(
+      makeReq('http://localhost:3000/api/admin/actions', {
+        method: 'POST',
+        userId: moderator,
+        body: {
+          targetType: 'post',
+          targetId: targetPostId,
+          action: 'dismiss',
+          reason: 'Report reviewed and determined non-violating.',
+        },
+      })
+    );
+    expect(dismissRes.status).toBe(201);
+    const dismissJson = await dismissRes.json();
+    expect(dismissJson.success).toBe(true);
+    expect(dismissJson.data.action).toBe('dismiss_report');
+
+    // 2. Test 'hide' normalized to 'remove' via alias route /api/admin/action
+    const hideRes = await postAdminActionAlias(
+      makeReq('http://localhost:3000/api/admin/action', {
+        method: 'POST',
+        userId: moderator,
+        body: {
+          targetType: 'post',
+          targetId: targetPostId,
+          action: 'hide',
+          reason: 'Violates campus respect policy guidelines.',
+        },
+      })
+    );
+    expect(hideRes.status).toBe(201);
+    const hideJson = await hideRes.json();
+    expect(hideJson.success).toBe(true);
+    expect(hideJson.data.action).toBe('remove');
+
+    // 3. Test 'suspend' with suspensionDurationHours normalized to suspendDays = 7
+    const suspendRes = await postAdminAction(
+      makeReq('http://localhost:3000/api/admin/actions', {
+        method: 'POST',
+        userId: moderator,
+        body: {
+          targetType: 'post',
+          targetId: targetPostId,
+          action: 'suspend',
+          reason: 'Repeated harassment violation requiring 7-day cooldown.',
+          suspensionDurationHours: 168,
+        },
+      })
+    );
+    expect(suspendRes.status).toBe(201);
+    const suspendJson = await suspendRes.json();
+    expect(suspendJson.success).toBe(true);
+    expect(suspendJson.data.action).toBe('suspend');
+
+    // 4. Test Case Lookup alias route /api/admin/case-lookup
+    const caseRes = await getAdminCaseLookupAlias(
+      makeReq(`http://localhost:3000/api/admin/case-lookup?postId=${targetPostId}&aliasNo=0`, {
+        userId: moderator,
+      })
+    );
+    expect(caseRes.status).toBe(200);
+    const caseJson = await caseRes.json();
+    expect(caseJson.success).toBe(true);
+    expect(caseJson.data.found).toBe(true);
+    expect(caseJson.data.postId).toBe(targetPostId);
+    expect(caseJson.data.email).toBeUndefined();
+  });
+
+  it('normalizes admin config update payloads across channels, places, and policy rules', async () => {
+    const moderator = '44444444-4444-4444-8444-444444444444';
+
+    // 1. Legacy addKeywordRule object
+    const ruleRes = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          addKeywordRule: {
+            pattern: 'midsem-exam-leak',
+            category: 'exam_leak',
+            matchType: 'contains',
+          },
+        },
+      })
+    );
+    expect(ruleRes.status).toBe(200);
+
+    // 2. Legacy addAllowedDomain string
+    const domainRes = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          addAllowedDomain: 'staff.upsa.edu.gh',
+        },
+      })
+    );
+    expect(domainRes.status).toBe(200);
+
+    // 3. Legacy zoneAccuracyGate object
+    const zoneRes = await putAdminConfig(
+      makeReq('http://localhost:3000/api/admin/config', {
+        method: 'PUT',
+        userId: moderator,
+        body: {
+          zoneAccuracyGate: {
+            zoneId: 1,
+            maxAccuracyMeters: 180,
+          },
+        },
+      })
+    );
+    expect(zoneRes.status).toBe(200);
+
+    // 4. Dedicated appeals decision endpoint /api/admin/appeals (POST and PATCH)
+    const appealPostRes = await postAdminAppealDecide(
+      makeReq('http://localhost:3000/api/admin/appeals', {
+        method: 'POST',
+        userId: moderator,
+        body: {
+          appealId: 999, // Non-existent appeal returns 404 cleanly
+          decision: 'upheld',
+          note: 'Post did not contain violations upon secondary review.',
+        },
+      })
+    );
+    // Returns 404 because appeal #999 does not exist in store, proving route and auth handler work
+    expect(appealPostRes.status).toBe(404);
+
+    const appealPatchRes = await patchAdminAppealDecide(
+      makeReq('http://localhost:3000/api/admin/appeals', {
+        method: 'PATCH',
+        userId: moderator,
+        body: {
+          appealId: 999,
+          decision: 'rejected',
+          note: 'Violation confirmed by independent review.',
+        },
+      })
+    );
+    expect(appealPatchRes.status).toBe(404);
   });
 });
 
