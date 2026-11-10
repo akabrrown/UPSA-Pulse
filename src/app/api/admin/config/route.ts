@@ -28,3 +28,5 @@ export async function PUT(req: NextRequest) {
     return mapDomainErrorToResponse(err);
   }
 }
+
+export const PATCH = PUT;

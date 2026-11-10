@@ -302,7 +302,7 @@ export default function AdminQueuePage() {
     action: 'dismiss' | 'hide' | 'suspend'
   ) => {
     const reason = reasonMap[item.targetId] || 'Violates community guidelines';
-    const res = await fetch('/api/admin/action', {
+    const res = await fetch('/api/admin/actions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -515,7 +515,7 @@ export default function AdminQueuePage() {
     e.preventDefault();
     setLookupResult(null);
     const res = await fetch(
-      `/api/admin/case-lookup?postId=${encodeURIComponent(lookupPostId)}&aliasNo=${lookupAliasNo}`
+      `/api/admin/lookup?postId=${encodeURIComponent(lookupPostId)}&aliasNo=${lookupAliasNo}`
     );
     const json = await res.json();
     if (res.ok && json.success) {
@@ -537,7 +537,7 @@ export default function AdminQueuePage() {
       body: JSON.stringify({
         appealId,
         decision,
-        decisionNote: appealNoteInput.trim(),
+        note: appealNoteInput.trim(),
       }),
     });
     const json = await res.json();

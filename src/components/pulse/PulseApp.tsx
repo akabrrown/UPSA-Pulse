@@ -296,6 +296,9 @@ export function PulseApp() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      if (typeof window.navigator.onLine === 'boolean') {
+        setIsOffline(!window.navigator.onLine);
+      }
       const handleOnline = () => setIsOffline(false);
       const handleOffline = () => setIsOffline(true);
       window.addEventListener('online', handleOnline);
@@ -1223,6 +1226,9 @@ export function PulseApp() {
       setComposeStatusToast(
         'This device is now trusted and your previous device session has been signed out.'
       );
+      void loadMeAndAlerts();
+    } else {
+      setComposeStatusToast(json.error?.message ?? 'Could not approve device.');
     }
   };
 
@@ -2953,7 +2959,7 @@ export function PulseApp() {
                   }
                   className="min-h-[44px] px-5 rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
                 >
-                  Reply
+                  {isOffline ? 'Offline' : replySubmitting ? 'Sending...' : 'Reply'}
                 </button>
               </div>
             </form>
@@ -4125,10 +4131,10 @@ export function PulseApp() {
                 </button>
                 <button
                   type="submit"
-                  disabled={composeBody.trim().length === 0 || composeBody.length > 500}
+                  disabled={isOffline || composeBody.trim().length === 0 || composeBody.length > 500}
                   className="min-h-[44px] px-6 rounded-[8px] bg-[#0B2A5B] text-white text-[15px] font-semibold disabled:opacity-40 hover:bg-[#1C4A8F] cursor-pointer"
                 >
-                  Post to Zone
+                  {isOffline ? 'Offline' : 'Post to Zone'}
                 </button>
               </div>
             </form>

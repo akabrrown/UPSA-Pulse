@@ -101,15 +101,43 @@ export async function broadcastRealtimeEvent(
     if (zoneId !== 'all') {
       channels.push('realtime-feed-zone:all');
     }
-    for (const channelName of channels) {
-      const channel = supabase.channel(channelName);
-      await channel.send({
-        type: 'broadcast',
-        event,
-        payload,
-      });
-      await supabase.removeChannel(channel);
-    }
+    await Promise.all(
+      channels.map(
+        (channelName) =>
+          new Promise<void>((resolve) => {
+            const channel = supabase.channel(channelName);
+            let settled = false;
+            const done = () => {
+              if (settled) return;
+              settled = true;
+              void supabase.removeChannel(channel);
+              resolve();
+            };
+
+            const timer = setTimeout(done, 1500);
+
+            channel.subscribe(async (status) => {
+              if (status === 'SUBSCRIBED') {
+                try {
+                  await channel.send({
+                    type: 'broadcast',
+                    event,
+                    payload,
+                  });
+                } catch {
+                  // non-fatal broadcast failure
+                } finally {
+                  clearTimeout(timer);
+                  done();
+                }
+              } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                clearTimeout(timer);
+                done();
+              }
+            });
+          })
+      )
+    );
   } catch (err) {
     console.warn('[Realtime Broadcast] Non-fatal notification failure:', err);
   }
