@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 const DEFAULT_VAPID_PUBLIC_KEY =
   'BHRqzwDaaMY5Y6R-WORpk6rLRYqQDUgbkoOhFuMWA5qqQdk6mB0CM_t3wCcKbBErTpkTabvJP4PmslDVXrECyWs';
+const DEFAULT_VAPID_PRIVATE_KEY =
+  'vzN2i086pGCkQzX1KHOIX7YeAgDd6_HyoMAnxdmcQ4k';
 
 const clientEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().default('https://example.supabase.co'),
@@ -16,7 +18,7 @@ const serverEnvSchema = clientEnvSchema.extend({
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   ARCJET_KEY: z.string().optional(),
   VAPID_PUBLIC_KEY: z.string().default(DEFAULT_VAPID_PUBLIC_KEY),
-  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().default(DEFAULT_VAPID_PRIVATE_KEY),
   VAPID_SUBJECT: z.string().default('mailto:akayeteb@gmail.com'),
   SENTRY_DSN: z.string().optional(),
   UPSA_INDEX_VERIFICATION_API_KEY: z.string().optional(),

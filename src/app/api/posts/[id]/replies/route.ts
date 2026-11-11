@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createReplySchema } from '@/lib/validation/schemas';
-import { dbCreateReply } from '@/lib/db/postgres';
+import { dbCreateReply, dbGetPostAuthor } from '@/lib/db/postgres';
+import { sendPushNotificationToUser } from '@/lib/push/web-push-service';
 import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function POST(
@@ -21,6 +22,21 @@ export async function POST(
 
     const userId = getAuthenticatedUserId(req);
     const reply = await dbCreateReply(userId, id, parsed.data.body);
+
+    if (reply.status === 'published') {
+      try {
+        const postAuthorId = await dbGetPostAuthor(id);
+        if (postAuthorId && postAuthorId !== userId) {
+          void sendPushNotificationToUser(postAuthorId, {
+            title: 'UPSA Pulse',
+            body: `New reply from Student ${reply.aliasNo}: "${parsed.data.body.slice(0, 80)}"`,
+            url: `/?thread=${encodeURIComponent(id)}`,
+          });
+        }
+      } catch (pushErr) {
+        console.warn('[WebPush] Error triggering reply push notification:', pushErr);
+      }
+    }
 
     return apiSuccess(
       {

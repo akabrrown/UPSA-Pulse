@@ -546,6 +546,19 @@ export function PulseApp() {
     };
   }, [loadThread]);
 
+  // Check active PushManager subscription on startup
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    navigator.serviceWorker.ready
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        if (sub) {
+          setPushSubscribed(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Background feed synchronization
   useEffect(() => {
     if (typeof window === 'undefined' || typeof Worker === 'undefined') return;
@@ -3567,40 +3580,61 @@ export function PulseApp() {
                   enable instant push notifications for replies and answers.
                 </p>
               ) : pushSubscribed ? (
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
                   <span className="text-[14px] text-[#1F7A4D] font-semibold">
                     Push alerts enabled for replies, accepted answers, and moderation outcomes.
                   </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        if (
-                          typeof window !== 'undefined' &&
-                          'serviceWorker' in navigator &&
-                          'PushManager' in window
-                        ) {
-                          const reg = await navigator.serviceWorker.ready;
-                          const sub = await reg.pushManager.getSubscription();
-                          if (sub) {
-                            await sub.unsubscribe();
-                            await fetch('/api/push/unsubscribe', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ endpoint: sub.endpoint }),
-                            });
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/push/test', { method: 'POST' });
+                          const json = await res.json();
+                          if (res.ok && json.success) {
+                            setComposeStatusToast(json.data?.message ?? 'Test alert dispatched!');
+                          } else {
+                            setComposeStatusToast(json.error?.message ?? 'Could not send test push.');
                           }
+                        } catch {
+                          setComposeStatusToast('Network error while testing push.');
                         }
-                      } catch (err) {
-                        console.error('Error disabling push:', err);
-                      }
-                      setPushSubscribed(false);
-                      setComposeStatusToast('Web push alerts turned off.');
-                    }}
-                    className="min-h-[44px] px-3 text-[13px] font-semibold text-[#A32121] cursor-pointer"
-                  >
-                    Turn off
-                  </button>
+                      }}
+                      className="min-h-[40px] px-3.5 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold hover:bg-[#1C4A8F] cursor-pointer"
+                    >
+                      Send Test Alert
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (
+                            typeof window !== 'undefined' &&
+                            'serviceWorker' in navigator &&
+                            'PushManager' in window
+                          ) {
+                            const reg = await navigator.serviceWorker.ready;
+                            const sub = await reg.pushManager.getSubscription();
+                            if (sub) {
+                              await sub.unsubscribe();
+                              await fetch('/api/push/unsubscribe', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ endpoint: sub.endpoint }),
+                              });
+                            }
+                          }
+                        } catch (err) {
+                          console.error('Error disabling push:', err);
+                        }
+                        setPushSubscribed(false);
+                        setComposeStatusToast('Web push alerts turned off.');
+                      }}
+                      className="min-h-[40px] px-3 text-[13px] font-semibold text-[#A32121] hover:underline cursor-pointer"
+                    >
+                      Turn off
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
@@ -3610,6 +3644,12 @@ export function PulseApp() {
                   <button
                     type="button"
                     onClick={async () => {
+                      if (!profileSummary) {
+                        setAuthMode('login');
+                        setOnboardingStage('signup');
+                        setComposeStatusToast('Sign in with your UPSA student ID to enable push alerts.');
+                        return;
+                      }
                       try {
                         if (typeof window !== 'undefined' && 'Notification' in window) {
                           const perm = await Notification.requestPermission();

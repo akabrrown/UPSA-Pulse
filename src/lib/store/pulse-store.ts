@@ -1688,6 +1688,23 @@ export function removePushSubscriptionInStore(userId: string, endpoint: string):
   );
 }
 
+export function getPushSubscriptionsFromStore(
+  userId: string
+): Array<{ id: number; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }> {
+  return state.pushSubscriptions.filter((s) => s.userId === userId);
+}
+
+export function getPostAuthorFromStore(postId: string): string | null {
+  const p = state.posts.get(postId);
+  return p?.authorId ?? null;
+}
+
+export function getReplyAuthorFromStore(replyId: string): { authorId: string | null; postId: string } | null {
+  const r = state.replies.get(replyId);
+  if (!r) return null;
+  return { authorId: r.authorId, postId: r.postId };
+}
+
 export function getAdminConfigFromStore(actorUserId: string) {
   const actor = state.profiles.get(actorUserId);
   if (!actor || !actor.isAdmin) {

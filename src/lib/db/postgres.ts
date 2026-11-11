@@ -31,6 +31,9 @@ import {
   deleteAccountInStore,
   savePushSubscriptionInStore,
   removePushSubscriptionInStore,
+  getPushSubscriptionsFromStore,
+  getPostAuthorFromStore,
+  getReplyAuthorFromStore,
   getAdminConfigFromStore,
   updateAdminConfigInStore,
   executeUnmaskActionInStore,
@@ -932,6 +935,72 @@ export async function dbRemovePushSubscription(userId: string, endpoint: string)
       `DELETE FROM private.push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2::text`,
       [userId, endpoint]
     );
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbGetPushSubscriptionsForUser(
+  userId: string
+): Promise<Array<{ id: number; endpoint: string; p256dh: string; auth: string }>> {
+  if (!shouldUseLiveDb()) {
+    return getPushSubscriptionsFromStore(userId).map((s) => ({
+      id: s.id,
+      endpoint: s.endpoint,
+      p256dh: s.p256dh,
+      auth: s.auth,
+    }));
+  }
+  const client = await getPgPool().connect();
+  try {
+    const res = await client.query(
+      `SELECT id, endpoint, p256dh, auth FROM private.push_subscriptions WHERE user_id = $1::uuid`,
+      [userId]
+    );
+    return res.rows.map((r) => ({
+      id: Number(r.id),
+      endpoint: String(r.endpoint),
+      p256dh: String(r.p256dh),
+      auth: String(r.auth),
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbGetPostAuthor(postId: string): Promise<string | null> {
+  if (!shouldUseLiveDb()) {
+    return getPostAuthorFromStore(postId);
+  }
+  const client = await getPgPool().connect();
+  try {
+    const res = await client.query(
+      `SELECT author_id FROM private.posts WHERE id = $1::uuid`,
+      [postId]
+    );
+    return res.rows[0]?.author_id ? String(res.rows[0].author_id) : null;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbGetReplyAuthor(
+  replyId: string
+): Promise<{ authorId: string | null; postId: string } | null> {
+  if (!shouldUseLiveDb()) {
+    return getReplyAuthorFromStore(replyId);
+  }
+  const client = await getPgPool().connect();
+  try {
+    const res = await client.query(
+      `SELECT author_id, post_id FROM private.replies WHERE id = $1::uuid`,
+      [replyId]
+    );
+    if (!res.rows[0]) return null;
+    return {
+      authorId: res.rows[0].author_id ? String(res.rows[0].author_id) : null,
+      postId: String(res.rows[0].post_id),
+    };
   } finally {
     client.release();
   }
