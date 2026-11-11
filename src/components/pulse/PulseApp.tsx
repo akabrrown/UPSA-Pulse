@@ -277,6 +277,7 @@ export function PulseApp() {
   } | null>(null);
   const seenNotifIdsRef = useRef<Set<number>>(new Set());
   const locallyReadNotifIdsRef = useRef<Set<number>>(new Set());
+  const locallyReadPostIdsRef = useRef<Set<string>>(new Set());
   const [isIosNotStandalone, setIsIosNotStandalone] = useState<boolean>(false);
   const [dataRequestType, setDataRequestType] = useState<'access' | 'correction'>('access');
   const [dataRequestDetails, setDataRequestDetails] = useState<string>('');
@@ -381,13 +382,23 @@ export function PulseApp() {
       const pIdStr = postId ? String(postId) : undefined;
       const nIdNum = notificationId !== undefined ? Number(notificationId) : undefined;
 
+      if (nIdNum !== undefined) {
+        locallyReadNotifIdsRef.current.add(nIdNum);
+      }
+      if (pIdStr) {
+        locallyReadPostIdsRef.current.add(pIdStr);
+      }
+
       setNotifications((prev) =>
         prev.map((n) => {
-          const matchNotif = nIdNum !== undefined && n.id === nIdNum;
+          const matchNotif = nIdNum !== undefined && Number(n.id) === nIdNum;
           const notifPostId = String(n.payload?.post_id ?? n.payload?.postId ?? '');
           const matchPost = pIdStr !== undefined && notifPostId === pIdStr;
           if (matchNotif || matchPost) {
-            locallyReadNotifIdsRef.current.add(n.id);
+            locallyReadNotifIdsRef.current.add(Number(n.id));
+            if (notifPostId) {
+              locallyReadPostIdsRef.current.add(notifPostId);
+            }
             return { ...n, readAt: n.readAt ?? nowIso };
           }
           return n;
@@ -417,7 +428,12 @@ export function PulseApp() {
         setProfileSummary(json.data.profile);
         const incomingRaw: NotificationRecord[] = json.data.notifications ?? [];
         const incoming = incomingRaw.map((n) => {
-          if (locallyReadNotifIdsRef.current.has(n.id) && !n.readAt) {
+          const notifPostId = String(n.payload?.post_id ?? n.payload?.postId ?? '');
+          const isLocallyRead =
+            locallyReadNotifIdsRef.current.has(Number(n.id)) ||
+            (notifPostId.length > 0 && locallyReadPostIdsRef.current.has(notifPostId));
+
+          if (isLocallyRead && !n.readAt) {
             return { ...n, readAt: new Date().toISOString() };
           }
           return n;
@@ -462,15 +478,15 @@ export function PulseApp() {
   }, []);
 
   const handleLeaveThread = useCallback(
-    (targetTab: 'feed' | 'channels' | 'alerts' | 'me' = 'feed') => {
+    async (targetTab: 'feed' | 'channels' | 'alerts' | 'me' = 'feed') => {
       const threadToMark = activeThreadId;
-      if (threadToMark) {
-        void markNotificationsForPostAsRead(threadToMark);
-      }
       setActiveThreadId(null);
       setThreadData(null);
       setActiveTab(targetTab);
-      void loadMeAndAlerts();
+      if (threadToMark) {
+        await markNotificationsForPostAsRead(threadToMark);
+      }
+      await loadMeAndAlerts();
     },
     [activeThreadId, markNotificationsForPostAsRead, loadMeAndAlerts]
   );
@@ -3914,6 +3930,7 @@ export function PulseApp() {
                         setProfileSummary(null);
                         setNotifications([]);
                         locallyReadNotifIdsRef.current.clear();
+                        locallyReadPostIdsRef.current.clear();
                         seenNotifIdsRef.current.clear();
                         setComposeStatusToast('Signed out of student session.');
                         void loadMeAndAlerts();
