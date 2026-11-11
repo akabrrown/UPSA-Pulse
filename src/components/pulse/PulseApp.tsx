@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Plus,
   RefreshCw,
+  Share2,
   ShieldAlert,
   ShieldCheck,
   Smile,
@@ -486,6 +487,65 @@ export function PulseApp() {
     }
   }, [loadFeed, loadMeAndAlerts]);
 
+  // Deep-linking: URL search parameters and hash synchronization (?tab=me, ?thread=id, #login)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const parseUrlParams = () => {
+      try {
+        const url = new URL(window.location.href);
+        const tab = url.searchParams.get('tab');
+        if (tab === 'feed' || tab === 'channels' || tab === 'alerts' || tab === 'me') {
+          setActiveTab(tab);
+        }
+        const thread = url.searchParams.get('thread') || url.searchParams.get('postId');
+        if (thread) {
+          setActiveTab('feed');
+          setActiveThreadId(thread);
+          void loadThread(thread);
+        }
+        const auth = url.searchParams.get('auth');
+        const hash = window.location.hash.toLowerCase();
+        if (auth === 'login' || hash === '#login') {
+          setAuthMode('login');
+          setOnboardingStage('signup');
+        } else if (auth === 'signup' || hash === '#signup') {
+          setAuthMode('signup');
+          setOnboardingStage('signup');
+        } else if (auth === 'forgot' || hash === '#forgot') {
+          setAuthMode('forgot');
+          setOnboardingStage('signup');
+        }
+        const chId = url.searchParams.get('channelId') || url.searchParams.get('channel');
+        if (chId && !isNaN(Number(chId))) {
+          setSelectedChannelId(Number(chId));
+        }
+        const zId = url.searchParams.get('zoneId') || url.searchParams.get('zone');
+        if (zId && !isNaN(Number(zId))) {
+          setSelectedZoneId(Number(zId));
+        }
+        const sortParam = url.searchParams.get('sort');
+        if (sortParam === 'hot' || sortParam === 'new' || sortParam === 'top24') {
+          setSort(sortParam);
+        }
+        const asks = url.searchParams.get('asks');
+        if (asks === 'true' || asks === '1') {
+          setAsksOnly(true);
+        }
+      } catch {
+        // non-fatal URL parsing error
+      }
+    };
+
+    parseUrlParams();
+    window.addEventListener('hashchange', parseUrlParams);
+    window.addEventListener('popstate', parseUrlParams);
+    return () => {
+      window.removeEventListener('hashchange', parseUrlParams);
+      window.removeEventListener('popstate', parseUrlParams);
+    };
+  }, [loadThread]);
+
   // Background feed synchronization
   useEffect(() => {
     if (typeof window === 'undefined' || typeof Worker === 'undefined') return;
@@ -655,6 +715,36 @@ export function PulseApp() {
     };
   }, [activeThreadId, loadFeed, loadThread, selectedZoneId]);
 
+  const handleSharePost = async (postId: string, textSnippet?: string) => {
+    if (typeof window === 'undefined') return;
+    const shareUrl = `${window.location.origin}/?thread=${encodeURIComponent(postId)}`;
+    const shareData = {
+      title: 'UPSA Pulse Campus Post',
+      text: textSnippet ? `${textSnippet.slice(0, 100)}... on UPSA Pulse` : 'Check out this post on UPSA Pulse',
+      url: shareUrl,
+    };
+
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        setComposeStatusToast('Post link copied to clipboard!');
+      } else {
+        setComposeStatusToast(`Post link: ${shareUrl}`);
+      }
+    } catch {
+      setComposeStatusToast(`Post link: ${shareUrl}`);
+    }
+  };
+
   const handleVote = async (
     targetType: 'post' | 'reply',
     targetId: string,
@@ -662,6 +752,12 @@ export function PulseApp() {
     currentVote: -1 | 0 | 1
   ) => {
     if (isOffline) return;
+    if (!profileSummary) {
+      setAuthMode('login');
+      setOnboardingStage('signup');
+      setComposeStatusToast('Sign in with your UPSA student ID to vote.');
+      return;
+    }
     const nextValue: -1 | 0 | 1 = currentVote === clickedValue ? 0 : clickedValue;
     const delta = nextValue - currentVote;
 
@@ -731,6 +827,13 @@ export function PulseApp() {
 
   const handleToggleReaction = async (postId: string, emoji: string) => {
     if (isOffline) return;
+    if (!profileSummary) {
+      setReactionPickerPostId(null);
+      setAuthMode('login');
+      setOnboardingStage('signup');
+      setComposeStatusToast('Sign in with your UPSA student ID to react with emojis.');
+      return;
+    }
     setReactionPickerPostId(null);
 
     const updateReactionsList = (current?: PostReactionSummary[]): PostReactionSummary[] => {
@@ -818,8 +921,27 @@ export function PulseApp() {
     }
   };
 
+  const handleOpenCompose = () => {
+    if (!profileSummary) {
+      setAuthMode('login');
+      setOnboardingStage('signup');
+      setComposeStatusToast('Sign in with your UPSA student ID to post to campus.');
+      return;
+    }
+    if (selectedChannelId) setComposeChannelId(selectedChannelId);
+    if (selectedZoneId) setComposeZoneId(selectedZoneId);
+    setComposeOpen(true);
+  };
+
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profileSummary) {
+      setComposeOpen(false);
+      setAuthMode('login');
+      setOnboardingStage('signup');
+      setComposeStatusToast('Sign in with your UPSA student ID to post.');
+      return;
+    }
     if (isOffline || composeBody.trim().length === 0 || composeBody.length > 500) return;
 
     try {
@@ -865,6 +987,12 @@ export function PulseApp() {
 
   const handleCreateReply = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profileSummary) {
+      setAuthMode('login');
+      setOnboardingStage('signup');
+      setComposeStatusToast('Sign in with your UPSA student ID to reply.');
+      return;
+    }
     if (!activeThreadId || isOffline || replyBody.trim().length === 0 || replyBody.length > 300) {
       return;
     }
@@ -893,10 +1021,18 @@ export function PulseApp() {
 
   const handleMarkAnswer = async (replyId: string) => {
     if (!activeThreadId || isOffline) return;
-    const res = await fetch(`/api/replies/${replyId}/answer`, { method: 'POST' });
-    if (res.ok) {
-      await loadThread(activeThreadId);
-      void loadFeed();
+    try {
+      const res = await fetch(`/api/replies/${replyId}/answer`, { method: 'POST' });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        await loadThread(activeThreadId);
+        void loadFeed();
+        setComposeStatusToast('Accepted answer pinned by OP!');
+      } else {
+        setComposeStatusToast(json.error?.message ?? 'Could not mark accepted answer.');
+      }
+    } catch {
+      setComposeStatusToast('Network error while marking accepted answer.');
     }
   };
 
@@ -911,25 +1047,41 @@ export function PulseApp() {
     }
   };
 
+  const handleOpenReport = (target: { targetType: 'post' | 'reply'; targetId: string }) => {
+    if (!profileSummary) {
+      setAuthMode('login');
+      setOnboardingStage('signup');
+      setComposeStatusToast('Sign in with your UPSA student ID to report content.');
+      return;
+    }
+    setReportTarget(target);
+  };
+
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reportTarget) return;
-    const res = await fetch('/api/reports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        targetType: reportTarget.targetType,
-        targetId: reportTarget.targetId,
-        reason: reportReason,
-        note: reportNote || undefined,
-      }),
-    });
-    const json = await res.json();
-    if (res.ok && json.success) {
-      setReportTarget(null);
-      setReportNote('');
-      setReportStatusMessage('Report received. Moderators review priority reports within 2 hours.');
-      void loadFeed();
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetType: reportTarget.targetType,
+          targetId: reportTarget.targetId,
+          reason: reportReason,
+          note: reportNote || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setReportTarget(null);
+        setReportNote('');
+        setReportStatusMessage('Report received. Moderators review priority reports within 2 hours.');
+        void loadFeed();
+      } else {
+        setComposeStatusToast(json.error?.message ?? 'Could not submit report. Check your connection.');
+      }
+    } catch {
+      setComposeStatusToast('Network error while submitting report.');
     }
   };
 
@@ -967,11 +1119,16 @@ export function PulseApp() {
     setLocationAllowed(true);
   };
 
+  const handleAllowLocationAndContinue = () => {
+    allowLocation();
+    setOnboardingStage('none');
+    setComposeStatusToast('Location access enabled. Verifying your campus zone in background...');
+    geofence.checkNow();
+    void loadFeed();
+  };
+
   const handleLiveGpsCheck = () => {
-    if (!locationAllowed) {
-      allowLocation();
-      return;
-    }
+    allowLocation();
     setComposeStatusToast('Checking your campus location...');
     geofence.checkNow();
   };
@@ -1349,20 +1506,34 @@ export function PulseApp() {
             />
             <span>UPSA Pulse</span>
           </div>
-          {welcomeSlide > 0 && (
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('upsa_pulse_welcomed', 'true');
                 }
-                setOnboardingStage('signup');
+                setOnboardingStage('none');
               }}
-              className="min-h-[44px] px-3 text-[15px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+              className="min-h-[44px] px-3 text-[14px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
             >
-              Skip to Consent
+              Browse Feed &rarr;
             </button>
-          )}
+            {welcomeSlide > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('upsa_pulse_welcomed', 'true');
+                  }
+                  setOnboardingStage('signup');
+                }}
+                className="min-h-[44px] px-2 text-[14px] font-semibold text-[var(--text-secondary)] hover:underline cursor-pointer"
+              >
+                Sign Up
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] overflow-hidden my-auto">
@@ -1407,13 +1578,28 @@ export function PulseApp() {
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('upsa_pulse_welcomed', 'true');
                 }
+                setAuthMode('signup');
                 setOnboardingStage('signup');
               }
             }}
             className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
           >
-            {welcomeSlide < 2 ? 'Continue' : 'Get started'}
+            {welcomeSlide < 2 ? 'Continue' : 'Create Account'}
           </button>
+          {welcomeSlide === 2 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('upsa_pulse_welcomed', 'true');
+                }
+                setOnboardingStage('none');
+              }}
+              className="w-full min-h-[44px] rounded-[8px] border border-[#0B2A5B] text-[#0B2A5B] font-semibold text-[15px] hover:bg-[#0B2A5B]/5 cursor-pointer"
+            >
+              Explore Campus Feed as Guest
+            </button>
+          )}
           <div className="text-center text-[13px] text-[var(--text-secondary)]">
             Read our{' '}
             <Link href="/privacy" className="font-semibold text-[#1C4A8F] underline">
@@ -2124,7 +2310,7 @@ export function PulseApp() {
           <div className="flex flex-col gap-3 pt-2">
             <button
               type="button"
-              onClick={allowLocation}
+              onClick={handleAllowLocationAndContinue}
               className="w-full min-h-[44px] rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
             >
               Allow Location Check (Use Device GPS)
@@ -2143,6 +2329,8 @@ export function PulseApp() {
                     onClick={() => {
                       allowLocation();
                       geofence.injectPosition(point.coords);
+                      setOnboardingStage('none');
+                      void loadFeed();
                     }}
                     className="min-h-[40px] px-3 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold cursor-pointer"
                   >
@@ -2771,6 +2959,15 @@ export function PulseApp() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleSharePost(threadData.post.id, threadData.post.body)}
+                    className="min-h-[44px] px-3 rounded-[8px] text-[13px] font-semibold text-[var(--text-secondary)] hover:text-[#0B2A5B] inline-flex items-center gap-1.5 cursor-pointer"
+                    aria-label="Share post link"
+                  >
+                    <Share2 className="w-4 h-4" aria-hidden="true" />
+                    <span>Share</span>
+                  </button>
                   {threadData.post.isMine && (
                     <button
                       type="button"
@@ -2784,7 +2981,7 @@ export function PulseApp() {
                   <button
                     type="button"
                     onClick={() =>
-                      setReportTarget({
+                      handleOpenReport({
                         targetType: 'post',
                         targetId: threadData.post.id,
                       })
@@ -2901,7 +3098,7 @@ export function PulseApp() {
                           <button
                             type="button"
                             onClick={() =>
-                              setReportTarget({
+                              handleOpenReport({
                                 targetType: 'reply',
                                 targetId: reply.id,
                               })
@@ -3016,7 +3213,7 @@ export function PulseApp() {
                   type="button"
                   onClick={() => {
                     setComposeIsAsk(true);
-                    setComposeOpen(true);
+                    handleOpenCompose();
                   }}
                   className="min-h-[44px] px-5 rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[15px] hover:bg-[#1C4A8F] cursor-pointer"
                 >
@@ -3237,16 +3434,30 @@ export function PulseApp() {
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          aria-label="Report post"
-                          onClick={() =>
-                            setReportTarget({ targetType: 'post', targetId: post.id })
-                          }
-                          className="min-w-[44px] min-h-[44px] rounded-[8px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-[#A32121] cursor-pointer"
-                        >
-                          <Flag className="w-4 h-4" aria-hidden="true" />
-                        </button>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            aria-label="Share post link"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleSharePost(post.id, post.body);
+                            }}
+                            className="min-w-[44px] min-h-[44px] rounded-[8px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-[#0B2A5B] cursor-pointer"
+                          >
+                            <Share2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Report post"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenReport({ targetType: 'post', targetId: post.id });
+                            }}
+                            className="min-w-[44px] min-h-[44px] rounded-[8px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-[#A32121] cursor-pointer"
+                          >
+                            <Flag className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </article>
@@ -3307,7 +3518,14 @@ export function PulseApp() {
                 <button
                   type="button"
                   onClick={async () => {
-                    await fetch('/api/me', { method: 'PATCH' });
+                    setNotifications((prev) =>
+                      prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() }))
+                    );
+                    try {
+                      await fetch('/api/me', { method: 'PATCH' });
+                    } catch {
+                      // non-fatal
+                    }
                     void loadMeAndAlerts();
                   }}
                   className="min-h-[44px] px-3 text-[14px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
@@ -3316,6 +3534,27 @@ export function PulseApp() {
                 </button>
               )}
             </div>
+
+            {!profileSummary && (
+              <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 text-center space-y-3">
+                <p className="text-[15px] font-semibold text-[var(--text-heading)]">
+                  Sign in to track your campus replies &amp; alerts
+                </p>
+                <p className="text-[14px] text-[var(--text-secondary)]">
+                  Alerts notify you when someone answers your Ask or responds to your campus post.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setOnboardingStage('signup');
+                  }}
+                  className="min-h-[44px] px-5 rounded-[8px] bg-[#0B2A5B] text-white font-semibold text-[14px] hover:bg-[#1C4A8F] cursor-pointer"
+                >
+                  Sign In with Student ID
+                </button>
+              </div>
+            )}
 
             {/* Web Push Opt-in Banner with iOS Home Screen install detection */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-4 space-y-2">
@@ -3522,48 +3761,90 @@ export function PulseApp() {
             )}
 
             {/* Private Student Identity & Authentication Card */}
-            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <div className="text-[13px] font-semibold text-[var(--text-secondary)]">
-                    Private Student Credentials (Never visible on public posts)
+            {!profileSummary ? (
+              <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-[13px] font-semibold text-[#8A6200]">
+                      Guest Mode · UPSA Campus Feed Visitor
+                    </div>
+                    <div className="text-[18px] font-bold text-[var(--text-heading)] mt-1">
+                      Not Signed In
+                    </div>
+                    <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">
+                      You are browsing campus posts as an anonymous guest. Sign in with your verified UPSA student index number to post, ask questions, vote, and react.
+                    </p>
                   </div>
-                  <div className="text-[18px] font-bold text-[var(--text-heading)] mt-1">
-                    @{profileSummary?.username ?? 'student'}{' '}
-                    <span className="text-[14px] font-mono text-[#1C4A8F]">
-                      · Index #{profileSummary?.indexNumber ?? '—'}
-                    </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setOnboardingStage('signup');
+                      }}
+                      className="min-h-[40px] px-4 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold hover:bg-[#1C4A8F] cursor-pointer"
+                    >
+                      Sign In with Student ID
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('signup');
+                        setOnboardingStage('signup');
+                      }}
+                      className="min-h-[40px] px-3.5 rounded-[8px] border border-[#0B2A5B] text-[#0B2A5B] text-[13px] font-semibold hover:bg-[#0B2A5B]/5 cursor-pointer"
+                    >
+                      Create Account
+                    </button>
                   </div>
-                  <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
-                    Provider: {profileSummary?.authProvider ?? '—'} · Index Verified:{' '}
-                    {profileSummary?.indexVerified ? 'Yes (API Key Active)' : 'Pending'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void fetch('/api/auth/logout', { method: 'POST' });
-                      setAuthMode('signup');
-                      setOnboardingStage('signup');
-                    }}
-                    className="min-h-[40px] px-3.5 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold hover:bg-[#1C4A8F] cursor-pointer"
-                  >
-                    Sign Up / Switch Student
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode('forgot');
-                      setOnboardingStage('signup');
-                    }}
-                    className="min-h-[40px] px-3.5 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] cursor-pointer"
-                  >
-                    Reset Password
-                  </button>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-[13px] font-semibold text-[var(--text-secondary)]">
+                      Private Student Credentials (Never visible on public posts)
+                    </div>
+                    <div className="text-[18px] font-bold text-[var(--text-heading)] mt-1">
+                      @{profileSummary.username}{' '}
+                      <span className="text-[14px] font-mono text-[#1C4A8F]">
+                        · Index #{profileSummary.indexNumber}
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+                      Provider: {profileSummary.authProvider ?? 'credentials'} · Index Verified:{' '}
+                      {profileSummary.indexVerified ? 'Yes (API Key Active)' : 'Pending'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await fetch('/api/auth/logout', { method: 'POST' });
+                        setProfileSummary(null);
+                        setNotifications([]);
+                        setComposeStatusToast('Signed out of student session.');
+                        void loadMeAndAlerts();
+                      }}
+                      className="min-h-[40px] px-3.5 rounded-[8px] border border-[#A32121]/40 text-[#A32121] text-[13px] font-semibold hover:bg-[#A32121]/10 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('forgot');
+                        setOnboardingStage('signup');
+                      }}
+                      className="min-h-[40px] px-3.5 rounded-[8px] border border-[var(--border-color)] text-[13px] font-semibold text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] cursor-pointer"
+                    >
+                      Reset Password
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Private Karma Card — KARMA-1 */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 flex items-center justify-between">
@@ -3887,76 +4168,100 @@ export function PulseApp() {
             </div>
 
             {/* Account Deletion */}
-            <form
-              onSubmit={handleDeleteAccount}
-              className="bg-[var(--surface-card)] border-2 border-[#A32121] rounded-[8px] p-5 space-y-3"
-            >
-              <div className="flex items-center gap-2 text-[#A32121] font-bold text-[16px]">
-                <AlertTriangle className="w-5 h-5" aria-hidden="true" />
-                <h2>Delete Account</h2>
+            {!profileSummary ? (
+              <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 text-center space-y-2">
+                <p className="text-[15px] font-semibold text-[var(--text-heading)]">
+                  Account Management &amp; Deletion
+                </p>
+                <p className="text-[13px] text-[var(--text-secondary)]">
+                  Sign in with your verified UPSA student index number to manage your profile or request permanent deletion.
+                </p>
               </div>
-              <p className="text-[14px] text-[var(--text-primary)]">
-                This removes your account and sign-in. Your past posts stay, with no link to you.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            ) : (
+              <form
+                onSubmit={handleDeleteAccount}
+                className="bg-[var(--surface-card)] border-2 border-[#A32121] rounded-[8px] p-5 space-y-3"
+              >
+                <div className="flex items-center gap-2 text-[#A32121] font-bold text-[16px]">
+                  <AlertTriangle className="w-5 h-5" aria-hidden="true" />
+                  <h2>Delete Account</h2>
+                </div>
+                <p className="text-[14px] text-[var(--text-primary)]">
+                  This removes your account and sign-in. Your past posts stay, with no link to you.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="delete-confirm-input"
+                      className="block text-[13px] font-semibold mb-1"
+                    >
+                      Type DELETE to confirm
+                    </label>
+                    <input
+                      id="delete-confirm-input"
+                      type="text"
+                      required
+                      placeholder="DELETE"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)]"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="delete-otp-input" className="block text-[13px] font-semibold">
+                        Fresh 6-digit OTP
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const randomCode = Math.floor(100000 + Math.random() * 900000).toString();
+                          setDeleteOtp(randomCode);
+                          setComposeStatusToast(`Security code ${randomCode} generated and filled.`);
+                        }}
+                        className="text-[12px] font-semibold text-[#1C4A8F] hover:underline cursor-pointer"
+                      >
+                        Generate Code
+                      </button>
+                    </div>
+                    <input
+                      id="delete-otp-input"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      required
+                      placeholder="123456"
+                      value={deleteOtp}
+                      onChange={(e) => setDeleteOtp(e.target.value)}
+                      className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)]"
+                    />
+                  </div>
+                </div>
                 <div>
                   <label
-                    htmlFor="delete-confirm-input"
-                    className="block text-[13px] font-semibold mb-1"
+                    htmlFor="delete-reason-input"
+                    className="block text-[13px] font-semibold mb-1 text-[var(--text-heading)]"
                   >
-                    Type DELETE to confirm
+                    Reason for deleting account (optional feedback)
                   </label>
-                  <input
-                    id="delete-confirm-input"
-                    type="text"
-                    required
-                    placeholder="DELETE"
-                    value={deleteConfirmText}
-                    onChange={(e) => setDeleteConfirmText(e.target.value)}
-                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)]"
+                  <textarea
+                    id="delete-reason-input"
+                    rows={2}
+                    placeholder="Tell us why you want to delete your account (e.g. graduating, privacy concerns, not active)..."
+                    value={deleteReason}
+                    onChange={(e) => setDeleteReason(e.target.value)}
+                    className="w-full p-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[14px] text-[var(--text-primary)]"
                   />
                 </div>
-                <div>
-                  <label htmlFor="delete-otp-input" className="block text-[13px] font-semibold mb-1">
-                    Fresh 6-digit OTP
-                  </label>
-                  <input
-                    id="delete-otp-input"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={6}
-                    required
-                    placeholder="123456"
-                    value={deleteOtp}
-                    onChange={(e) => setDeleteOtp(e.target.value)}
-                    className="w-full min-h-[44px] px-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)]"
-                  />
-                </div>
-              </div>
-              <div>
-                <label
-                  htmlFor="delete-reason-input"
-                  className="block text-[13px] font-semibold mb-1 text-[var(--text-heading)]"
+                <button
+                  type="submit"
+                  disabled={deleteConfirmText !== 'DELETE' || deleteOtp.length !== 6}
+                  className="min-h-[44px] px-5 rounded-[8px] bg-[#A32121] text-white font-semibold text-[15px] disabled:opacity-40 cursor-pointer"
                 >
-                  Reason for deleting account (optional feedback)
-                </label>
-                <textarea
-                  id="delete-reason-input"
-                  rows={2}
-                  placeholder="Tell us why you want to delete your account (e.g. graduating, privacy concerns, not active)..."
-                  value={deleteReason}
-                  onChange={(e) => setDeleteReason(e.target.value)}
-                  className="w-full p-3 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[14px] text-[var(--text-primary)]"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={deleteConfirmText !== 'DELETE' || deleteOtp.length !== 6}
-                className="min-h-[44px] px-5 rounded-[8px] bg-[#A32121] text-white font-semibold text-[15px] disabled:opacity-40 cursor-pointer"
-              >
-                Permanently Delete My Account
-              </button>
-            </form>
+                  Permanently Delete My Account
+                </button>
+              </form>
+            )}
           </section>
         )}
       </main>
@@ -4409,7 +4714,7 @@ export function PulseApp() {
           <div className="flex items-center justify-center">
             <button
               type="button"
-              onClick={() => setComposeOpen(true)}
+              onClick={handleOpenCompose}
               aria-label="Compose a post or Ask"
               className="min-w-[48px] min-h-[48px] px-4 rounded-[8px] bg-[#D9A21B] text-[#0B2A5B] font-bold text-[13px] inline-flex items-center justify-center gap-1 shadow-sm hover:opacity-95 cursor-pointer"
             >
