@@ -288,6 +288,7 @@ export function PulseApp() {
   const [accountDeletedMessage, setAccountDeletedMessage] = useState<string | null>(null);
   const [appealMessage, setAppealMessage] = useState<string>('');
   const [appealSubmitted, setAppealSubmitted] = useState<boolean>(false);
+  const [postPendingDelete, setPostPendingDelete] = useState<string | null>(null);
 
   // Pending Device Approval & Blocking Legal Re-acceptance Sheet
   const [pendingDeviceModalOpen, setPendingDeviceModalOpen] = useState<boolean>(false);
@@ -1112,12 +1113,25 @@ export function PulseApp() {
   };
 
   const handleDeleteOwnPost = async (postId: string) => {
-    if (isOffline) return;
-    const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
-    if (res.ok) {
-      handleLeaveThread('feed');
-      void loadFeed();
-      setComposeStatusToast('Your post has been removed.');
+    if (isOffline) {
+      setComposeStatusToast('Cannot delete posts while offline.');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
+        if (activeThreadId === postId) {
+          await handleLeaveThread('feed');
+        }
+        void loadFeed();
+        setComposeStatusToast('Your post has been removed.');
+      } else {
+        const json = await res.json().catch(() => null);
+        setComposeStatusToast(json?.error?.message ?? 'Unable to delete post right now.');
+      }
+    } catch {
+      setComposeStatusToast('Network error while deleting post.');
     }
   };
 
@@ -3050,8 +3064,9 @@ export function PulseApp() {
                   {threadData.post.isMine && (
                     <button
                       type="button"
-                      onClick={() => void handleDeleteOwnPost(threadData.post.id)}
-                      className="min-h-[44px] px-3 rounded-[8px] text-[13px] font-semibold text-[#A32121] hover:bg-[#A32121]/10 inline-flex items-center gap-1 cursor-pointer"
+                      onClick={() => setPostPendingDelete(threadData.post.id)}
+                      className="min-h-[44px] px-3 rounded-[8px] text-[13px] font-semibold text-[#A32121] hover:bg-[#A32121]/10 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                      aria-label="Delete my post"
                     >
                       <Trash2 className="w-4 h-4" aria-hidden="true" />
                       <span>Delete</span>
@@ -3514,6 +3529,19 @@ export function PulseApp() {
                         </div>
 
                         <div className="flex items-center gap-0.5">
+                          {post.isMine && (
+                            <button
+                              type="button"
+                              aria-label="Delete my post"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPostPendingDelete(post.id);
+                              }}
+                              className="min-w-[44px] min-h-[44px] rounded-[8px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-[#A32121] hover:bg-[#A32121]/10 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             aria-label="Share post link"
@@ -4888,6 +4916,50 @@ export function PulseApp() {
                 className="min-h-[44px] px-5 rounded-[8px] bg-[#0B2A5B] text-white text-[14px] font-semibold disabled:opacity-40 cursor-pointer"
               >
                 Accept &amp; Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Post Confirmation Modal */}
+      {postPendingDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-post-dialog-title"
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm"
+        >
+          <div className="bg-[var(--surface-card)] text-[var(--text-primary)] w-full max-w-[440px] rounded-[12px] border border-[var(--border-color)] p-6 space-y-4 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-[#A32121]/10 text-[#A32121] flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" aria-hidden="true" />
+            </div>
+            <div className="text-center space-y-2">
+              <h2 id="delete-post-dialog-title" className="text-[18px] font-bold text-[var(--text-heading)]">
+                Delete this post?
+              </h2>
+              <p className="text-[14px] text-[var(--text-secondary)]">
+                This will permanently remove your post and its replies from the UPSA campus feed.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPostPendingDelete(null)}
+                className="flex-1 min-h-[44px] rounded-[8px] border border-[var(--border-color)] text-[14px] font-semibold text-[var(--text-heading)] hover:bg-[var(--surface-subtle)] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = postPendingDelete;
+                  setPostPendingDelete(null);
+                  if (id) await handleDeleteOwnPost(id);
+                }}
+                className="flex-1 min-h-[44px] rounded-[8px] bg-[#A32121] text-white text-[14px] font-semibold hover:bg-[#8A1B1B] cursor-pointer"
+              >
+                Delete Post
               </button>
             </div>
           </div>
