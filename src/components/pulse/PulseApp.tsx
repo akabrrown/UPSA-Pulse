@@ -275,6 +275,7 @@ export function PulseApp() {
     postId?: string;
   } | null>(null);
   const seenNotifIdsRef = useRef<Set<number>>(new Set());
+  const locallyReadNotifIdsRef = useRef<Set<number>>(new Set());
   const [isIosNotStandalone, setIsIosNotStandalone] = useState<boolean>(false);
   const [dataRequestType, setDataRequestType] = useState<'access' | 'correction'>('access');
   const [dataRequestDetails, setDataRequestDetails] = useState<string>('');
@@ -375,12 +376,18 @@ export function PulseApp() {
 
   const markNotificationsForPostAsRead = useCallback(
     async (postId?: string, notificationId?: number) => {
+      const nowIso = new Date().toISOString();
+      const pIdStr = postId ? String(postId) : undefined;
+      const nIdNum = notificationId !== undefined ? Number(notificationId) : undefined;
+
       setNotifications((prev) =>
         prev.map((n) => {
-          const matchNotif = notificationId !== undefined && n.id === notificationId;
-          const matchPost = postId !== undefined && n.payload?.post_id === postId;
+          const matchNotif = nIdNum !== undefined && n.id === nIdNum;
+          const notifPostId = String(n.payload?.post_id ?? n.payload?.postId ?? '');
+          const matchPost = pIdStr !== undefined && notifPostId === pIdStr;
           if (matchNotif || matchPost) {
-            return { ...n, readAt: n.readAt ?? new Date().toISOString() };
+            locallyReadNotifIdsRef.current.add(n.id);
+            return { ...n, readAt: n.readAt ?? nowIso };
           }
           return n;
         })
@@ -390,8 +397,8 @@ export function PulseApp() {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            notificationId,
-            postId,
+            notificationId: nIdNum,
+            postId: pIdStr,
           }),
         });
       } catch {
@@ -407,7 +414,13 @@ export function PulseApp() {
       const json = await res.json();
       if (res.ok && json.success) {
         setProfileSummary(json.data.profile);
-        const incoming: NotificationRecord[] = json.data.notifications ?? [];
+        const incomingRaw: NotificationRecord[] = json.data.notifications ?? [];
+        const incoming = incomingRaw.map((n) => {
+          if (locallyReadNotifIdsRef.current.has(n.id) && !n.readAt) {
+            return { ...n, readAt: new Date().toISOString() };
+          }
+          return n;
+        });
         setNotifications(incoming);
 
         // Detect fresh unread alerts to trigger in-app push-up notification
@@ -429,7 +442,12 @@ export function PulseApp() {
               id: String(latest.id),
               title,
               message,
-              postId: typeof latest.payload?.post_id === 'string' ? latest.payload.post_id : undefined,
+              postId:
+                typeof latest.payload?.post_id === 'string'
+                  ? latest.payload.post_id
+                  : typeof latest.payload?.postId === 'string'
+                  ? latest.payload.postId
+                  : undefined,
             });
           }
         }
@@ -441,6 +459,20 @@ export function PulseApp() {
       // Keep cached state if offline
     }
   }, []);
+
+  const handleLeaveThread = useCallback(
+    (targetTab: 'feed' | 'channels' | 'alerts' | 'me' = 'feed') => {
+      const threadToMark = activeThreadId;
+      if (threadToMark) {
+        void markNotificationsForPostAsRead(threadToMark);
+      }
+      setActiveThreadId(null);
+      setThreadData(null);
+      setActiveTab(targetTab);
+      void loadMeAndAlerts();
+    },
+    [activeThreadId, markNotificationsForPostAsRead, loadMeAndAlerts]
+  );
 
   const loadThread = useCallback(async (postId: string) => {
     try {
@@ -1053,8 +1085,7 @@ export function PulseApp() {
     if (isOffline) return;
     const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
     if (res.ok) {
-      setActiveThreadId(null);
-      setThreadData(null);
+      handleLeaveThread('feed');
       void loadFeed();
       setComposeStatusToast('Your post has been removed.');
     }
@@ -2815,10 +2846,7 @@ export function PulseApp() {
           <section aria-label="Conversation thread" className="space-y-4">
             <button
               type="button"
-              onClick={() => {
-                setActiveThreadId(null);
-                setThreadData(null);
-              }}
+              onClick={() => handleLeaveThread('feed')}
               className="min-h-[44px] inline-flex items-center gap-2 text-[15px] font-semibold text-[var(--text-heading)] hover:underline cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" aria-hidden="true" />
@@ -3531,8 +3559,12 @@ export function PulseApp() {
                 <button
                   type="button"
                   onClick={async () => {
+                    const nowIso = new Date().toISOString();
                     setNotifications((prev) =>
-                      prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() }))
+                      prev.map((n) => {
+                        locallyReadNotifIdsRef.current.add(n.id);
+                        return { ...n, readAt: n.readAt ?? nowIso };
+                      })
                     );
                     try {
                       await fetch('/api/me', { method: 'PATCH' });
@@ -3748,8 +3780,9 @@ export function PulseApp() {
                   <div
                     key={n.id}
                     onClick={() => {
-                      const postId = n.payload.post_id;
-                      if (typeof postId === 'string') {
+                      const rawPostId = n.payload?.post_id ?? n.payload?.postId;
+                      const postId = rawPostId ? String(rawPostId) : undefined;
+                      if (postId) {
                         setActiveTab('feed');
                         setActiveThreadId(postId);
                         void loadThread(postId);
@@ -3864,6 +3897,8 @@ export function PulseApp() {
                         await fetch('/api/auth/logout', { method: 'POST' });
                         setProfileSummary(null);
                         setNotifications([]);
+                        locallyReadNotifIdsRef.current.clear();
+                        seenNotifIdsRef.current.clear();
                         setComposeStatusToast('Signed out of student session.');
                         void loadMeAndAlerts();
                       }}
@@ -4721,8 +4756,11 @@ export function PulseApp() {
           <button
             type="button"
             onClick={() => {
-              setActiveThreadId(null);
-              setActiveTab('feed');
+              if (activeThreadId) {
+                handleLeaveThread('feed');
+              } else {
+                setActiveTab('feed');
+              }
             }}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold cursor-pointer ${
               activeTab === 'feed' && !activeThreadId
@@ -4737,8 +4775,11 @@ export function PulseApp() {
           <button
             type="button"
             onClick={() => {
-              setActiveThreadId(null);
-              setActiveTab('channels');
+              if (activeThreadId) {
+                handleLeaveThread('channels');
+              } else {
+                setActiveTab('channels');
+              }
             }}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold cursor-pointer ${
               activeTab === 'channels'
@@ -4766,8 +4807,11 @@ export function PulseApp() {
           <button
             type="button"
             onClick={() => {
-              setActiveThreadId(null);
-              setActiveTab('alerts');
+              if (activeThreadId) {
+                handleLeaveThread('alerts');
+              } else {
+                setActiveTab('alerts');
+              }
             }}
             className={`relative min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold cursor-pointer ${
               activeTab === 'alerts'
@@ -4787,8 +4831,11 @@ export function PulseApp() {
           <button
             type="button"
             onClick={() => {
-              setActiveThreadId(null);
-              setActiveTab('me');
+              if (activeThreadId) {
+                handleLeaveThread('me');
+              } else {
+                setActiveTab('me');
+              }
             }}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[12px] font-semibold cursor-pointer ${
               activeTab === 'me'

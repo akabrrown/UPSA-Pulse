@@ -1500,9 +1500,16 @@ export function markNotificationsReadInStore(
   const nowIso = new Date().toISOString();
   for (const n of state.notifications) {
     if (n.userId === userId && !n.readAt) {
-      if (filter?.notificationId && n.id !== filter.notificationId) continue;
-      if (filter?.postId && n.payload?.post_id !== filter.postId) continue;
-      n.readAt = nowIso;
+      if (!filter || (filter.notificationId === undefined && filter.postId === undefined)) {
+        n.readAt = nowIso;
+        continue;
+      }
+      const notifPostId = String(n.payload?.post_id ?? n.payload?.postId ?? '');
+      const matchNotifId = filter.notificationId !== undefined && n.id === filter.notificationId;
+      const matchPostId = filter.postId !== undefined && notifPostId === String(filter.postId);
+      if (matchNotifId || matchPostId) {
+        n.readAt = nowIso;
+      }
     }
   }
 }

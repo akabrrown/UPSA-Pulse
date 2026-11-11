@@ -779,15 +779,20 @@ export async function dbMarkNotificationsRead(
     return;
   }
   await withAuthenticatedUser(userId, async (client) => {
-    if (filter?.notificationId) {
+    if (filter?.notificationId !== undefined || filter?.postId !== undefined) {
       await client.query(
-        `UPDATE private.notifications SET read_at = now() WHERE id = $1 AND user_id = $2 AND read_at IS NULL`,
-        [filter.notificationId, userId]
-      );
-    } else if (filter?.postId) {
-      await client.query(
-        `UPDATE private.notifications SET read_at = now() WHERE user_id = $1 AND (payload->>'post_id')::text = $2 AND read_at IS NULL`,
-        [userId, filter.postId]
+        `UPDATE private.notifications
+         SET read_at = now()
+         WHERE user_id = $1
+           AND read_at IS NULL
+           AND (
+             ($2::bigint IS NOT NULL AND id = $2::bigint)
+             OR ($3::text IS NOT NULL AND (
+               (payload->>'post_id')::text = $3::text
+               OR (payload->>'postId')::text = $3::text
+             ))
+           )`,
+        [userId, filter.notificationId ?? null, filter.postId ?? null]
       );
     } else {
       await client.query(`SELECT feed.mark_notifications_read()`);

@@ -269,23 +269,36 @@ describe('UPSA Pulse End-to-End Store & API Contract Invariants', () => {
     verifyUserZoneInStore(studentEfua, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
     verifyUserZoneInStore(studentKojo, { lat: 5.6605, lng: -0.1662, accuracy: 30 });
 
-    const post = createPostInStore(studentEfua, {
+    const post1 = createPostInStore(studentEfua, {
       channelId: 1,
       kind: 'ask',
       body: 'Where is the graduation gown pickup?',
     });
-    createReplyInStore(studentKojo, post.id, 'At the main auditorium lobby.');
+    createReplyInStore(studentKojo, post1.id, 'At the main auditorium lobby.');
+    createReplyInStore(studentKojo, post1.id, 'Remember to bring your student ID!');
+
+    const post2 = createPostInStore(studentEfua, {
+      channelId: 2,
+      kind: 'post',
+      body: 'Has anyone seen a lost notebook?',
+    });
+    createReplyInStore(studentKojo, post2.id, 'Check the library desk.');
 
     const notifsBefore = getNotificationsFromStore(studentEfua);
-    const replyNotif = notifsBefore.find((n) => n.payload?.post_id === post.id);
-    expect(replyNotif).toBeDefined();
-    expect(replyNotif?.readAt).toBeNull();
+    const post1Notifs = notifsBefore.filter((n) => n.payload?.post_id === post1.id);
+    const post2Notifs = notifsBefore.filter((n) => n.payload?.post_id === post2.id);
+    expect(post1Notifs.length).toBe(2);
+    expect(post2Notifs.length).toBe(1);
+    expect(post1Notifs.every((n) => n.readAt === null)).toBe(true);
 
-    markNotificationsReadInStore(studentEfua, { postId: post.id });
+    // Pass both notificationId and postId, asserting both replies on post1 are marked read
+    markNotificationsReadInStore(studentEfua, { postId: post1.id, notificationId: post1Notifs[0]!.id });
 
     const notifsAfter = getNotificationsFromStore(studentEfua);
-    const markedNotif = notifsAfter.find((n) => n.payload?.post_id === post.id);
-    expect(markedNotif?.readAt).not.toBeNull();
+    const post1NotifsAfter = notifsAfter.filter((n) => n.payload?.post_id === post1.id);
+    const post2NotifsAfter = notifsAfter.filter((n) => n.payload?.post_id === post2.id);
+    expect(post1NotifsAfter.every((n) => n.readAt !== null)).toBe(true);
+    expect(post2NotifsAfter[0]?.readAt).toBeNull();
   });
 
   it('enforces disabled unmask gate by default (D6) and two-person approval when policy flag enabled', () => {

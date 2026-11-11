@@ -31,8 +31,14 @@ export async function PATCH(req: NextRequest) {
     try {
       const body = await req.json();
       if (body && typeof body === 'object') {
-        const notifId = typeof body.notificationId === 'number' ? body.notificationId : undefined;
-        const pId = typeof body.postId === 'string' ? body.postId : undefined;
+        const notifId =
+          body.notificationId !== undefined && !isNaN(Number(body.notificationId))
+            ? Number(body.notificationId)
+            : undefined;
+        const pId =
+          body.postId !== undefined && body.postId !== null && String(body.postId).trim().length > 0
+            ? String(body.postId).trim()
+            : undefined;
         if (notifId !== undefined || pId !== undefined) {
           filter = { notificationId: notifId, postId: pId };
         }

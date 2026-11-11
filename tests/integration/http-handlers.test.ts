@@ -965,5 +965,98 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
     );
     expect(appealPatchRes.status).toBe(404);
   });
+
+  it('clears notification badge and marks all replies on a viewed post as read via PATCH /api/me', async () => {
+    // 1. Verify zones
+    await verifyZonePost(
+      makeReq('http://localhost:3000/api/zone/verify', {
+        method: 'POST',
+        userId: efua,
+        body: { lat: 5.6605, lng: -0.1662, accuracy: 25 },
+      })
+    );
+    await verifyZonePost(
+      makeReq('http://localhost:3000/api/zone/verify', {
+        method: 'POST',
+        userId: kojo,
+        body: { lat: 5.6605, lng: -0.1662, accuracy: 25 },
+      })
+    );
+
+    // 2. Student creates post
+    const postRes = await createPost(
+      makeReq('http://localhost:3000/api/posts', {
+        method: 'POST',
+        userId: efua,
+        body: {
+          channelId: 1,
+          kind: 'ask',
+          body: 'Is the library open past 10pm tonight?',
+        },
+      })
+    );
+    expect(postRes.status).toBe(201);
+    const postJson = await postRes.json();
+    const postId = postJson.data.post.id as string;
+
+    // 3. Peer replies twice to the post
+    await createReply(
+      makeReq(`http://localhost:3000/api/posts/${postId}/replies`, {
+        method: 'POST',
+        userId: kojo,
+        body: { body: 'Yes, 24 hours during exam week.' },
+      }),
+      { params: Promise.resolve({ id: postId }) }
+    );
+    await createReply(
+      makeReq(`http://localhost:3000/api/posts/${postId}/replies`, {
+        method: 'POST',
+        userId: kojo,
+        body: { body: 'Make sure to bring your student ID card.' },
+      }),
+      { params: Promise.resolve({ id: postId }) }
+    );
+
+    // 4. Student checks /api/me: sees 2 unread notifications
+    const meResBefore = await getMe(
+      makeReq('http://localhost:3000/api/me', { userId: efua })
+    );
+    expect(meResBefore.status).toBe(200);
+    const meJsonBefore = await meResBefore.json();
+    expect(meJsonBefore.success).toBe(true);
+    const notifsBefore = meJsonBefore.data.notifications as Array<{ id: number; readAt: string | null; payload: { post_id?: string } }>;
+    const postNotifs = notifsBefore.filter((n) => n.payload?.post_id === postId);
+    expect(postNotifs.length).toBe(2);
+    expect(postNotifs.every((n) => n.readAt === null)).toBe(true);
+
+    // 5. Student views the thread and leaves: PATCH /api/me with postId and notificationId
+    const patchRes = await patchMe(
+      makeReq('http://localhost:3000/api/me', {
+        method: 'PATCH',
+        userId: efua,
+        body: {
+          postId,
+          notificationId: postNotifs[0]!.id,
+        },
+      })
+    );
+    expect(patchRes.status).toBe(200);
+    const patchJson = await patchRes.json();
+    expect(patchJson.success).toBe(true);
+
+    // 6. Student checks /api/me again: all notifications for that post are marked read!
+    const meResAfter = await getMe(
+      makeReq('http://localhost:3000/api/me', { userId: efua })
+    );
+    expect(meResAfter.status).toBe(200);
+    const meJsonAfter = await meResAfter.json();
+    const notifsAfter = meJsonAfter.data.notifications as Array<{ id: number; readAt: string | null; payload: { post_id?: string } }>;
+    const postNotifsAfter = notifsAfter.filter((n) => n.payload?.post_id === postId);
+    expect(postNotifsAfter.length).toBe(2);
+    expect(postNotifsAfter.every((n) => n.readAt !== null)).toBe(true);
+
+    const unreadCount = notifsAfter.filter((n) => !n.readAt).length;
+    expect(unreadCount).toBe(0);
+  });
 });
 
