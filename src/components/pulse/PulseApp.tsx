@@ -177,6 +177,7 @@ export function PulseApp() {
   const [asksOnly, setAsksOnly] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [overflowOpen, setOverflowOpen] = useState<boolean>(false);
+  const overflowRef = useRef<HTMLDivElement | null>(null);
 
   // Onboarding & Authentication State
   const [onboardingStage, setOnboardingStage] = useState<OnboardingStage>('none');
@@ -869,6 +870,19 @@ export function PulseApp() {
       document.removeEventListener('touchstart', handleDocumentClick);
     };
   }, [reactionPickerPostId]);
+
+  useEffect(() => {
+    if (!overflowOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
+        setOverflowOpen(false);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
+  }, [overflowOpen]);
 
   const handleToggleReaction = async (postId: string, emoji: string) => {
     if (isOffline) return;
@@ -2468,7 +2482,7 @@ export function PulseApp() {
   }
 
   return (
-    <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-hidden flex flex-col bg-[var(--surface-app)] text-[var(--text-primary)] pb-20 relative">
+    <div className="min-h-[100dvh] w-full max-w-[640px] mx-auto overflow-x-clip flex flex-col bg-[var(--surface-app)] text-[var(--text-primary)] pb-20 relative">
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-[#0B2A5B] text-white border-b border-[#1C4A8F]">
         <div className="max-w-[640px] mx-auto px-4 pt-3 pb-0">
@@ -2525,7 +2539,7 @@ export function PulseApp() {
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
 
-              <div className="relative">
+              <div className="relative" ref={overflowRef}>
                 <button
                   type="button"
                   onClick={() => setOverflowOpen(!overflowOpen)}
@@ -2537,7 +2551,9 @@ export function PulseApp() {
                 </button>
 
                 {overflowOpen && (
-                  <div className="absolute right-0 mt-1 w-64 bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-[8px] py-1 z-40 shadow-xl divide-y divide-[var(--border-color)]">
+                  <div
+                    className="absolute right-0 mt-1 w-64 max-h-[calc(100dvh-80px)] overflow-y-auto overscroll-contain bg-[var(--surface-card)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-[8px] py-1 z-50 shadow-2xl divide-y divide-[var(--border-color)]"
+                  >
                     <div className="py-1">
                       <button
                         type="button"

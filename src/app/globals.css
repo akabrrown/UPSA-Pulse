@@ -91,7 +91,7 @@ html {
 body {
   width: 100%;
   min-height: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   -webkit-tap-highlight-color: transparent;
   background-color: var(--surface-app);
