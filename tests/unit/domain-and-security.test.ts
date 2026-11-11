@@ -291,10 +291,17 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
   });
 
   describe('UPSA Student Index Verification (HMS Hostel Verification API Integration)', () => {
-    it('validates 8 to 10 digit UPSA index number formats', () => {
+    it('validates 8 to 10 digit UPSA index number formats strictly starting with 10 or programme codes', () => {
       expect(isValidUpsaIndexNumber('10298545')).toBe(true);
       expect(isValidUpsaIndexNumber('10297545')).toBe(true);
       expect(isValidUpsaIndexNumber('10284912')).toBe(true);
+      expect(isValidUpsaIndexNumber('PS/ITC/22/0001')).toBe(true);
+      expect(isValidUpsaIndexNumber('BACS220145')).toBe(true);
+
+      // Random non-UPSA numbers must strictly fail format check
+      expect(isValidUpsaIndexNumber('12345678')).toBe(false);
+      expect(isValidUpsaIndexNumber('99999999')).toBe(false);
+      expect(isValidUpsaIndexNumber('55555555')).toBe(false);
       expect(isValidUpsaIndexNumber('123')).toBe(false);
       expect(isValidUpsaIndexNumber('not-an-index')).toBe(false);
     });
@@ -322,6 +329,7 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
         expect(found.studentName).toBe('JERRY BROWN DANKWA');
         expect(found.verificationMode).toBe('external_api');
 
+        // Not found index
         const notFound = await verifyStudentIndexWithApiKey(
           '10297545',
           undefined,
@@ -329,7 +337,12 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
         );
         expect(notFound.valid).toBe(false);
         expect(notFound.studentName).toBeUndefined();
-        expect(notFound.reason).toBe('index_rejected_by_verification_api');
+        expect(notFound.reason).toBe('index_not_found_on_campus_records');
+
+        // Random non-school index number rejected immediately
+        const randomInvalid = await verifyStudentIndexWithApiKey('99999999');
+        expect(randomInvalid.valid).toBe(false);
+        expect(randomInvalid.reason).toBe('invalid_index_format');
       } finally {
         globalThis.fetch = originalFetch;
       }

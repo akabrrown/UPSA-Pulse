@@ -1278,6 +1278,10 @@ export function PulseApp() {
       setAuthError('Enter your valid UPSA student index number.');
       return;
     }
+    if (!indexVerifiedBadge) {
+      setAuthError('Please click "Verify" to validate your student index number on university records.');
+      return;
+    }
     if (pwd.length < 8) {
       setAuthError('Password must be at least 8 characters.');
       return;

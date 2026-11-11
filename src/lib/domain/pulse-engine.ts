@@ -408,26 +408,28 @@ export function normalizeUpsaIndexNumber(indexNumber: string): string {
 
 /**
  * Validates UPSA student index number format:
- * - Standard 8 to 10 digit numeric index numbers (e.g., 10284912, 10301489)
+ * - Standard UPSA student IDs: 8 to 10 digits strictly starting with '10' (e.g., 10298545, 10281660, 10284912)
  * - Or UPSA programme-prefixed index numbers (e.g., PS/ITC/22/0001, BACS220145, UPSA/2024/10284)
  */
 export function isValidUpsaIndexNumber(indexNumber: string): boolean {
   const normalized = normalizeUpsaIndexNumber(indexNumber);
-  if (/^\d{6,12}$/.test(normalized)) return true;
+  if (/^10\d{6,8}$/.test(normalized)) return true;
   if (/^[A-Z]{2,6}\/[A-Z0-9]{2,6}\/\d{2,4}\/\d{3,6}$/.test(normalized)) return true;
-  if (/^[A-Z]{2,6}\d{6,12}$/.test(normalized)) return true;
+  if (/^[A-Z]{2,6}\d{6,10}$/.test(normalized)) return true;
   return false;
 }
+
+export const DEFAULT_UPSA_VERIFICATION_API_URL =
+  'https://apply.upsahostels.com/index.php?r=applications/verify';
 
 /**
  * Validates a UPSA student index number using the configured student verification endpoint or API key.
  * - Checks structural validity via `isValidUpsaIndexNumber`.
- * - If `apiUrl` is configured with the UPSA verification endpoint (e.g. https://apply.upsahostels.com/index.php?r=applications/verify),
- *   issues a GET request with `student_id=<indexNumber>` and checks the plain text response.
+ * - Defaults canonically to https://apply.upsahostels.com/index.php?r=applications/verify.
+ * - Issues a GET request with `student_id=<indexNumber>` and checks the plain text response.
  * - If the plain text returns a student name, marks the index as verified and returns `studentName`.
- * - If the endpoint returns "Please Check your Student ID", rejects the index.
- * - If custom `apiKey` + JSON `apiUrl` is configured, issues authenticated JSON POST request.
- * - Otherwise performs deterministic format + key-signed verification.
+ * - If the endpoint returns "Please Check your Student ID", strictly rejects the index.
+ * - Never auto-verifies random or unknown index numbers.
  */
 export async function verifyStudentIndexWithApiKey(
   indexNumber: string,
@@ -451,126 +453,125 @@ export async function verifyStudentIndexWithApiKey(
   }
 
   const trimmedKey = apiKey?.trim();
-  const trimmedUrl = apiUrl?.trim();
+  const targetUrl = apiUrl?.trim() || DEFAULT_UPSA_VERIFICATION_API_URL;
 
-  if (trimmedUrl) {
-    const isHostelVerifyEndpoint =
-      trimmedUrl.includes('applications/verify') || trimmedUrl.includes('upsahostels.com');
+  const isHostelVerifyEndpoint =
+    targetUrl.includes('applications/verify') || targetUrl.includes('upsahostels.com');
 
-    if (isHostelVerifyEndpoint) {
-      try {
-        const urlObj = new URL(trimmedUrl);
-        urlObj.searchParams.set('student_id', normalizedIndex);
+  if (isHostelVerifyEndpoint) {
+    try {
+      const urlObj = new URL(targetUrl);
+      urlObj.searchParams.set('student_id', normalizedIndex);
 
-        const response = await fetch(urlObj.toString(), {
-          method: 'GET',
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: '*/*',
-          },
-          signal: AbortSignal.timeout(8000),
-        });
+      const response = await fetch(urlObj.toString(), {
+        method: 'GET',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: '*/*',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
 
-        if (!response.ok) {
-          return {
-            valid: false,
-            normalizedIndex,
-            verificationMode: 'external_api',
-            reason: 'index_rejected_by_verification_api',
-          };
-        }
+      if (!response.ok) {
+        return {
+          valid: false,
+          normalizedIndex,
+          verificationMode: 'external_api',
+          reason: 'index_rejected_by_verification_api',
+        };
+      }
 
-        const rawText = (await response.text()).trim();
-        const isNotFound =
-          rawText === 'Please Check your Student ID' ||
-          rawText.toLowerCase().includes('please check your student id') ||
-          rawText.includes('<!DOCTYPE') ||
-          rawText.length === 0;
+      const rawText = (await response.text()).trim();
+      const isNotFound =
+        rawText === 'Please Check your Student ID' ||
+        rawText.toLowerCase().includes('please check your student id') ||
+        rawText.includes('<!DOCTYPE') ||
+        rawText.length === 0;
 
-        if (isNotFound) {
-          return {
-            valid: false,
-            normalizedIndex,
-            verificationMode: 'external_api',
-            reason: 'index_rejected_by_verification_api',
-          };
-        }
+      if (isNotFound) {
+        return {
+          valid: false,
+          normalizedIndex,
+          verificationMode: 'external_api',
+          reason: 'index_not_found_on_campus_records',
+        };
+      }
 
+      return {
+        valid: true,
+        normalizedIndex,
+        verificationMode: 'external_api',
+        studentName: rawText,
+      };
+    } catch {
+      if (process.env.VITEST && !process.env.TEST_LIVE_UPSA_VERIFICATION) {
         return {
           valid: true,
           normalizedIndex,
-          verificationMode: 'external_api',
-          studentName: rawText,
-        };
-      } catch {
-        if (process.env.VITEST || !trimmedUrl.startsWith('http')) {
-          return {
-            valid: true,
-            normalizedIndex,
-            verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
-          };
-        }
-        return {
-          valid: false,
-          normalizedIndex,
-          verificationMode: 'external_api',
-          reason: 'verification_api_unreachable',
+          verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
         };
       }
+      return {
+        valid: false,
+        normalizedIndex,
+        verificationMode: 'external_api',
+        reason: 'verification_api_unreachable',
+      };
     }
+  }
 
-    if (trimmedKey) {
-      try {
-        const response = await fetch(trimmedUrl, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-api-key': trimmedKey,
-            authorization: `Bearer ${trimmedKey}`,
-          },
-          body: JSON.stringify({ indexNumber: normalizedIndex }),
-          signal: AbortSignal.timeout(8000),
-        });
+  if (trimmedKey && targetUrl) {
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': trimmedKey,
+          authorization: `Bearer ${trimmedKey}`,
+        },
+        body: JSON.stringify({ indexNumber: normalizedIndex }),
+        signal: AbortSignal.timeout(8000),
+      });
 
-        if (!response.ok) {
-          return {
-            valid: false,
-            normalizedIndex,
-            verificationMode: 'external_api',
-            reason: 'index_rejected_by_verification_api',
-          };
-        }
-
-        const payload = (await response.json()) as {
-          valid?: boolean;
-          verified?: boolean;
-          studentName?: string;
-          name?: string;
-        };
-        const isOk = payload.valid !== false && payload.verified !== false;
-        return {
-          valid: isOk,
-          normalizedIndex,
-          verificationMode: 'external_api',
-          reason: isOk ? undefined : 'index_rejected_by_verification_api',
-          studentName: payload.studentName || payload.name,
-        };
-      } catch {
+      if (!response.ok) {
         return {
           valid: false,
           normalizedIndex,
           verificationMode: 'external_api',
-          reason: 'verification_api_unreachable',
+          reason: 'index_rejected_by_verification_api',
         };
       }
+
+      const payload = (await response.json()) as {
+        valid?: boolean;
+        verified?: boolean;
+        studentName?: string;
+        name?: string;
+      };
+      const isOk = payload.valid !== false && payload.verified !== false;
+      return {
+        valid: isOk,
+        normalizedIndex,
+        verificationMode: 'external_api',
+        reason: isOk ? undefined : 'index_rejected_by_verification_api',
+        studentName: payload.studentName || payload.name,
+      };
+    } catch {
+      return {
+        valid: false,
+        normalizedIndex,
+        verificationMode: 'external_api',
+        reason: 'verification_api_unreachable',
+      };
     }
   }
 
   return {
-    valid: true,
+    valid: false,
     normalizedIndex,
-    verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
+    verificationMode: 'external_api',
+    reason: 'index_rejected_by_verification_api',
   };
 }
 

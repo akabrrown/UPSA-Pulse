@@ -54,7 +54,9 @@ export async function POST(req: NextRequest) {
           valid: false,
           reason: check.reason ?? 'invalid_index_number',
           message:
-            'Unable to verify UPSA student index number. Check your 8–10 digit index number (e.g. 10284912) and try again.',
+            check.reason === 'invalid_index_format'
+              ? 'Invalid UPSA student ID format. UPSA student IDs are 8 digits starting with 10 (e.g. 10298545).'
+              : 'UPSA student index number not found on university records. Please check your student ID and try again.',
         });
       }
       return apiSuccess(check);
@@ -119,7 +121,9 @@ export async function POST(req: NextRequest) {
       if (!indexCheck.valid) {
         return apiError(
           indexCheck.reason ?? 'invalid_index_number',
-          'Invalid UPSA student index number. Enter a valid 8–10 digit UPSA index number (e.g. 10284912).',
+          indexCheck.reason === 'invalid_index_format'
+            ? 'Invalid UPSA student ID format. UPSA student IDs are 8 digits starting with 10 (e.g. 10298545).'
+            : 'UPSA student index number not found on university records. Please check your student ID and try again.',
           400
         );
       }
