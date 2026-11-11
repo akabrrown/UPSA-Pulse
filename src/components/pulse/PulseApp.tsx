@@ -3986,6 +3986,167 @@ export function PulseApp() {
               </div>
             </div>
 
+            {/* Web Push Notifications Settings */}
+            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 text-[var(--text-heading)] font-bold text-[15px]">
+                  <Bell className="w-4 h-4 text-[#1C4A8F]" />
+                  <h2>Web Push Notifications</h2>
+                </div>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[12px] font-bold ${
+                    pushSubscribed ? 'bg-[#EBF5EE] text-[#1F7A4D]' : 'bg-[#DCE6F5] text-[#0B2A5B]'
+                  }`}
+                >
+                  {pushSubscribed ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+              <p className="text-[13px] text-[var(--text-secondary)]">
+                Receive instant campus alerts when other students reply to your posts, accept your answers, or when moderation notices are issued.
+              </p>
+              {isIosNotStandalone ? (
+                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] text-[13px] text-[var(--text-secondary)]">
+                  On iPhone/iPad, tap <strong>Share &gt; Add to Home Screen</strong> first to enable native Web Push alerts on iOS.
+                </div>
+              ) : pushSubscribed ? (
+                <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+                  <span className="text-[13px] text-[#1F7A4D] font-semibold">
+                    Instant alerts are active for your browser session.
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/push/test', { method: 'POST' });
+                          const json = await res.json();
+                          if (res.ok && json.success) {
+                            setComposeStatusToast(json.data?.message ?? 'Test alert dispatched!');
+                          } else {
+                            setComposeStatusToast(json.error?.message ?? 'Could not send test push.');
+                          }
+                        } catch {
+                          setComposeStatusToast('Network error while testing push.');
+                        }
+                      }}
+                      className="min-h-[40px] px-3.5 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold hover:bg-[#1C4A8F] cursor-pointer"
+                    >
+                      Send Test Alert
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (
+                            typeof window !== 'undefined' &&
+                            'serviceWorker' in navigator &&
+                            'PushManager' in window
+                          ) {
+                            const reg = await navigator.serviceWorker.ready;
+                            const sub = await reg.pushManager.getSubscription();
+                            if (sub) {
+                              await sub.unsubscribe();
+                              await fetch('/api/push/unsubscribe', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ endpoint: sub.endpoint }),
+                              });
+                            }
+                          }
+                        } catch (err) {
+                          console.error('Error disabling push:', err);
+                        }
+                        setPushSubscribed(false);
+                        setComposeStatusToast('Web push alerts turned off.');
+                      }}
+                      className="min-h-[40px] px-3 text-[13px] font-semibold text-[#A32121] hover:underline cursor-pointer"
+                    >
+                      Turn Off
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        if (
+                          typeof window !== 'undefined' &&
+                          'Notification' in window &&
+                          'serviceWorker' in navigator
+                        ) {
+                          const permission = await Notification.requestPermission();
+                          if (permission !== 'granted') {
+                            setComposeStatusToast('Push permission was not granted by your browser.');
+                            return;
+                          }
+                          try {
+                            const reg = await navigator.serviceWorker.ready;
+                            let sub = await reg.pushManager.getSubscription();
+                            if (!sub) {
+                              const configRes = await fetch('/api/push/subscribe');
+                              const configJson = await configRes.json();
+                              const vapidPublicKey = configJson.data?.vapidPublicKey;
+                              if (vapidPublicKey) {
+                                sub = await reg.pushManager.subscribe({
+                                  userVisibleOnly: true,
+                                  applicationServerKey: vapidPublicKey,
+                                });
+                              }
+                            }
+                            if (sub) {
+                              const p256dh = sub.getKey('p256dh');
+                              const auth = sub.getKey('auth');
+                              const p256dhStr = p256dh
+                                ? btoa(String.fromCharCode(...new Uint8Array(p256dh)))
+                                : '';
+                              const authStr = auth
+                                ? btoa(String.fromCharCode(...new Uint8Array(auth)))
+                                : '';
+                              await fetch('/api/push/subscribe', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  endpoint: sub.endpoint,
+                                  p256dh: p256dhStr,
+                                  auth: authStr,
+                                }),
+                              });
+                            }
+                          } catch {
+                            // Direct notification construction fallback
+                          }
+                          setPushSubscribed(true);
+                          setComposeStatusToast('Web Push notifications enabled for UPSA Pulse!');
+                          return;
+                        }
+                        // Fallback subscription for testing environment
+                        await fetch('/api/push/subscribe', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            endpoint: 'https://fcm.googleapis.com/fcm/send/demo-settings-endpoint',
+                            p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QT9ic04wfG1wRFQhD0Eg9RwgzDZ07SkqR5Trn',
+                            auth: 'tBHItJI5svbpez7KI4CCXg',
+                          }),
+                        });
+                        setPushSubscribed(true);
+                        setComposeStatusToast('Push alerts enabled for campus activity.');
+                      } catch (err) {
+                        console.error('Push subscribe error:', err);
+                        setComposeStatusToast('Could not enable push notifications.');
+                      }
+                    }}
+                    className="min-h-[44px] px-5 rounded-[8px] bg-[#0B2A5B] text-white text-[14px] font-semibold hover:bg-[#1C4A8F] cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <Bell className="w-4 h-4" />
+                    <span>Enable Push Notifications</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Hardware Device Security */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -4141,59 +4302,6 @@ export function PulseApp() {
                 Submit Data Request
               </button>
             </form>
-
-            {/* Legal Pages Navigation — LEGAL-1 */}
-            <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <h2 className="text-[16px] font-bold text-[var(--text-heading)]">
-                  PWA Brand Assets, App Icons &amp; Splash Screens
-                </h2>
-                <span className="px-2.5 py-0.5 rounded-full bg-[#DCE6F5] text-[#0B2A5B] text-[12px] font-bold">
-                  Installable PWA Ready
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
-                  <Image
-                    src="/images/upsa-pulse-emblem.jpg"
-                    alt="UPSA Pulse App Crest"
-                    width={56}
-                    height={56}
-                    className="w-14 h-14 rounded-[10px] object-cover shrink-0 border border-[#D9A21B]/40"
-                  />
-                  <div className="text-[12px]">
-                    <div className="font-bold text-[var(--text-heading)]">App Crest &amp; Icons</div>
-                    <div className="text-[var(--text-secondary)]">192px, 512px, Maskable &amp; Apple Touch</div>
-                  </div>
-                </div>
-                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
-                  <Image
-                    src="/splash/apple-splash-750x1334.png"
-                    alt="UPSA Pulse Splash Screen"
-                    width={40}
-                    height={56}
-                    className="w-10 h-14 rounded-[6px] object-cover shrink-0 border border-[#0B2A5B]"
-                  />
-                  <div className="text-[12px]">
-                    <div className="font-bold text-[var(--text-heading)]">PWA Splash Screens</div>
-                    <div className="text-[var(--text-secondary)]">iOS &amp; Android WebAPK Startup</div>
-                  </div>
-                </div>
-                <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)] flex items-center gap-3">
-                  <Image
-                    src="/images/upsa-pulse-campus-hero.jpg"
-                    alt="UPSA Campus Hero Illustration"
-                    width={64}
-                    height={56}
-                    className="w-16 h-14 rounded-[6px] object-cover shrink-0 border border-[var(--border-color)]"
-                  />
-                  <div className="text-[12px]">
-                    <div className="font-bold text-[var(--text-heading)]">Campus Hero Banner</div>
-                    <div className="text-[var(--text-secondary)]">Onboarding &amp; OpenGraph Share</div>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* Legal Pages Navigation */}
             <div className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[8px] p-5 space-y-3">

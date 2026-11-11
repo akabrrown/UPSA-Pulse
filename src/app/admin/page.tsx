@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Shield,
   Lock,
@@ -19,6 +20,7 @@ import {
   MapPin,
   Layers,
   ChevronRight,
+  Smartphone,
 } from 'lucide-react';
 import { ChannelIcon } from '@/components/pulse/ChannelIcon';
 
@@ -126,7 +128,8 @@ export type AdminSection =
   | 'channels'
   | 'places'
   | 'policies'
-  | 'unmask';
+  | 'unmask'
+  | 'settings';
 
 export default function AdminQueuePage() {
   const [currentUser, setCurrentUser] = useState<{
@@ -198,6 +201,7 @@ export default function AdminQueuePage() {
       'places',
       'policies',
       'unmask',
+      'settings',
     ];
 
     const applyHash = () => {
@@ -740,6 +744,19 @@ export default function AdminQueuePage() {
           icon: Lock,
           badge: configSummary?.unmaskRequests?.length ? configSummary.unmaskRequests.length : null,
           badgeTone: 'amber',
+        },
+      ],
+    },
+    {
+      title: 'APP CONFIG & ASSETS',
+      items: [
+        {
+          id: 'settings',
+          label: 'Brand Assets & PWA Settings',
+          description: 'App crest, splash screens & PWA',
+          icon: Smartphone,
+          badge: 'PWA Ready',
+          badgeTone: 'blue',
         },
       ],
     },
@@ -2204,6 +2221,145 @@ export default function AdminQueuePage() {
                   </div>
                 )}
               </section>
+            )}
+
+            {/* SECTION 8: BRAND ASSETS & PWA SETTINGS */}
+            {activeSection === 'settings' && (
+              <div className="space-y-6">
+                {/* Brand Assets Showcase & Specs */}
+                <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[12px] p-6 space-y-5 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 flex-wrap border-b border-[var(--border-color)] pb-4">
+                    <div>
+                      <h3 className="text-[18px] font-bold text-[var(--text-heading)]">
+                        PWA Brand Assets, App Icons &amp; Splash Screens
+                      </h3>
+                      <p className="text-[13px] text-[var(--text-secondary)] mt-0.5">
+                        Central administrative registry for campus branding, progressive web app icons, and startup screens.
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-[#DCE6F5] text-[#0B2A5B] text-[12px] font-bold border border-[#0B2A5B]/20">
+                      Installable PWA Ready
+                    </span>
+                  </div>
+
+                  {/* 3 Brand Asset Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Crest & Icons */}
+                    <div className="p-4 rounded-[10px] bg-[var(--surface-subtle)] border border-[var(--border-color)] space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src="/images/upsa-pulse-emblem.jpg"
+                          alt="UPSA Pulse App Crest"
+                          width={64}
+                          height={64}
+                          className="w-16 h-16 rounded-[12px] object-cover shrink-0 border-2 border-[#D9A21B]/60 shadow-sm"
+                        />
+                        <div>
+                          <div className="font-bold text-[15px] text-[var(--text-heading)]">
+                            App Crest &amp; Icons
+                          </div>
+                          <div className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+                            192px, 512px, Maskable &amp; Apple Touch
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
+                        Official crest emblem with Gold border (#D9A21B). Used across Android Adaptive Icons, iOS Safari homescreen shortcuts, and manifest badge definitions.
+                      </p>
+                      <div className="pt-2 border-t border-[var(--border-color)] text-[11px] font-mono text-[var(--text-secondary)]">
+                        Asset: /images/upsa-pulse-emblem.jpg
+                      </div>
+                    </div>
+
+                    {/* Splash Screen */}
+                    <div className="p-4 rounded-[10px] bg-[var(--surface-subtle)] border border-[var(--border-color)] space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src="/splash/apple-splash-750x1334.png"
+                          alt="UPSA Pulse Splash Screen"
+                          width={48}
+                          height={64}
+                          className="w-12 h-16 rounded-[8px] object-cover shrink-0 border-2 border-[#0B2A5B] shadow-sm"
+                        />
+                        <div>
+                          <div className="font-bold text-[15px] text-[var(--text-heading)]">
+                            PWA Splash Screens
+                          </div>
+                          <div className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+                            iOS &amp; Android WebAPK Startup
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
+                        Full-bleed startup visual for standalone web app launching. Provides instant native feel on iPhone (Safari WebClip) and Android WebAPK.
+                      </p>
+                      <div className="pt-2 border-t border-[var(--border-color)] text-[11px] font-mono text-[var(--text-secondary)]">
+                        Asset: /splash/apple-splash-750x1334.png
+                      </div>
+                    </div>
+
+                    {/* Campus Hero Illustration */}
+                    <div className="p-4 rounded-[10px] bg-[var(--surface-subtle)] border border-[var(--border-color)] space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src="/images/upsa-pulse-campus-hero.jpg"
+                          alt="UPSA Campus Hero Illustration"
+                          width={72}
+                          height={64}
+                          className="w-18 h-16 rounded-[8px] object-cover shrink-0 border-2 border-[var(--border-color)] shadow-sm"
+                        />
+                        <div>
+                          <div className="font-bold text-[15px] text-[var(--text-heading)]">
+                            Campus Hero Banner
+                          </div>
+                          <div className="text-[12px] text-[var(--text-secondary)] mt-0.5">
+                            Onboarding &amp; OpenGraph Share
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[12px] text-[var(--text-secondary)] leading-relaxed">
+                        Wide format campus architectural artwork. Displayed on public onboarding tour, Twitter card metadata, and OpenGraph social embeds.
+                      </p>
+                      <div className="pt-2 border-t border-[var(--border-color)] text-[11px] font-mono text-[var(--text-secondary)]">
+                        Asset: /images/upsa-pulse-campus-hero.jpg
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Technical Manifest & Progressive Web App Configuration */}
+                <section className="bg-[var(--surface-card)] border border-[var(--border-color)] rounded-[12px] p-6 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-[16px] font-bold text-[var(--text-heading)]">
+                      PWA Manifest &amp; Runtime Configuration
+                    </h3>
+                    <span className="text-[12px] font-mono text-[#1F7A4D] bg-[#EBF5EE] px-2 py-0.5 rounded-[4px] font-bold">
+                      Active
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-[13px]">
+                    <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
+                      <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Application Name</div>
+                      <div className="font-bold text-[var(--text-heading)] mt-0.5">UPSA Pulse</div>
+                    </div>
+                    <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
+                      <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Short Name</div>
+                      <div className="font-bold text-[var(--text-heading)] mt-0.5">Pulse</div>
+                    </div>
+                    <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
+                      <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Theme Color</div>
+                      <div className="font-bold text-[#0B2A5B] font-mono mt-0.5">#0B2A5B</div>
+                    </div>
+                    <div className="p-3 rounded-[8px] bg-[var(--surface-subtle)] border border-[var(--border-color)]">
+                      <div className="text-[11px] font-semibold text-[var(--text-secondary)]">Display Mode</div>
+                      <div className="font-bold text-[var(--text-heading)] font-mono mt-0.5">standalone</div>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-[8px] bg-[#EEF2F8] border border-[#1C4A8F]/30 text-[12px] text-[#0B2A5B] leading-relaxed">
+                    <strong>PWA Service Worker:</strong> Registered at <code>/sw.js</code> with Web Push event listener, cache-first icon fallback, and offline geofence check support. Manifest served dynamically at <code>/manifest.json</code>.
+                  </div>
+                </section>
+              </div>
             )}
           </div>
         </div>
