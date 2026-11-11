@@ -16,6 +16,8 @@ import {
   verifyPassword,
   checkRateLimit,
   resetRateLimitsForTests,
+  isValidUpsaIndexNumber,
+  verifyStudentIndexWithApiKey,
 } from '@/lib/domain/pulse-engine';
 import {
   signUpConsentSchema,
@@ -285,6 +287,52 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
       expect(verifyPassword(rawPassword, hash1, pepper)).toBe(true);
       expect(verifyPassword(rawPassword, hash2, pepper)).toBe(true);
       expect(verifyPassword('WrongPassword#123', hash1, pepper)).toBe(false);
+    });
+  });
+
+  describe('UPSA Student Index Verification (HMS Hostel Verification API Integration)', () => {
+    it('validates 8 to 10 digit UPSA index number formats', () => {
+      expect(isValidUpsaIndexNumber('10298545')).toBe(true);
+      expect(isValidUpsaIndexNumber('10297545')).toBe(true);
+      expect(isValidUpsaIndexNumber('10284912')).toBe(true);
+      expect(isValidUpsaIndexNumber('123')).toBe(false);
+      expect(isValidUpsaIndexNumber('not-an-index')).toBe(false);
+    });
+
+    it('verifies student indices and returns studentName when found by external endpoint', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const urlStr = String(input);
+        if (urlStr.includes('student_id=10298545')) {
+          return new Response('JERRY BROWN DANKWA', { status: 200 });
+        }
+        if (urlStr.includes('student_id=10297545')) {
+          return new Response('Please Check your Student ID', { status: 200 });
+        }
+        return new Response('Please Check your Student ID', { status: 200 });
+      }) as typeof fetch;
+
+      try {
+        const found = await verifyStudentIndexWithApiKey(
+          '10298545',
+          undefined,
+          'https://apply.upsahostels.com/index.php?r=applications/verify'
+        );
+        expect(found.valid).toBe(true);
+        expect(found.studentName).toBe('JERRY BROWN DANKWA');
+        expect(found.verificationMode).toBe('external_api');
+
+        const notFound = await verifyStudentIndexWithApiKey(
+          '10297545',
+          undefined,
+          'https://apply.upsahostels.com/index.php?r=applications/verify'
+        );
+        expect(notFound.valid).toBe(false);
+        expect(notFound.studentName).toBeUndefined();
+        expect(notFound.reason).toBe('index_rejected_by_verification_api');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 

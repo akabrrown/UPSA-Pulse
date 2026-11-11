@@ -1255,7 +1255,9 @@ export function PulseApp() {
       setSignupIndexNumber(json.data.normalizedIndex);
       setSignupEmail(`${json.data.normalizedIndex}@st.upsa.edu.gh`);
       setIndexVerifiedBadge(
-        json.data.verificationMode === 'external_api' || json.data.verificationMode === 'api_key_ready'
+        json.data.studentName
+          ? `Verified: ${json.data.studentName} (${json.data.normalizedIndex})`
+          : json.data.verificationMode === 'external_api' || json.data.verificationMode === 'api_key_ready'
           ? `Verified via UPSA Index API (${json.data.normalizedIndex})`
           : `UPSA Index Verified (${json.data.normalizedIndex})`
       );
