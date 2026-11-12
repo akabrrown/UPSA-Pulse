@@ -64,7 +64,10 @@ export async function POST(req: NextRequest) {
               ? 'Invalid UPSA student ID format. UPSA student IDs are 8 digits starting with 10 (e.g. 10298545).'
               : check.reason === 'surname_mismatch'
                 ? `Surname does not match university records for ID ${check.normalizedIndex}. Please enter your exact legal surname.`
-                : 'UPSA student index number not found on university records. Please check your student ID and try again.',
+                : check.reason === 'verification_api_unreachable' ||
+                    check.reason === 'index_rejected_by_verification_api'
+                  ? 'The official UPSA verification server (apply.upsahostels.com) is currently experiencing an upstream database outage (HTTP 500). Please try again shortly.'
+                  : 'UPSA student index number not found on university records. Please check your student ID and try again.',
         });
       }
       return apiSuccess({

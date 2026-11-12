@@ -468,6 +468,16 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
           expect(confirmed.valid).toBe(true);
           expect(confirmed.surnameVerified).toBe(true);
           expect(confirmed.challengeRequired).toBe(false);
+
+          const wrongCached = await verifyStudentIndexWithApiKey(
+            '10298545',
+            undefined,
+            'https://apply.upsahostels.com/index.php?r=applications/verify',
+            undefined,
+            'WrongSurname'
+          );
+          expect(wrongCached.valid).toBe(false);
+          expect(wrongCached.reason).toBe('surname_mismatch');
         } finally {
           globalThis.fetch = originalFetch;
         }

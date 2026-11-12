@@ -423,10 +423,9 @@ export function isValidUpsaIndexNumber(indexNumber: string): boolean {
 const VERIFIED_UPSA_STUDENT_CACHE = new Map<string, string>([
   ['10298545', 'JERRY BROWN DANKWA'],
   ['10297745', 'SAMUEL PAA KWESI ASIEDU'],
+  ['10281660', 'GILBERT MATSI'],
+  ['10299500', 'DORIS TUMULINE CLARKE'],
 ]);
-
-let lastUpstreamFailureAt = 0;
-const UPSTREAM_FAILURE_COOLDOWN_MS = 60_000;
 
 function evaluateFallbackStudentChallenge(
   normalizedIndex: string,
@@ -477,41 +476,11 @@ function evaluateFallbackStudentChallenge(
     };
   }
 
-  if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
-    const cleanSurname = surnameAttempt.trim();
-    const isValidSurname = /^[a-zA-Z][a-zA-Z'\-\s]{1,39}$/.test(cleanSurname);
-    if (!isValidSurname) {
-      return {
-        valid: false,
-        normalizedIndex,
-        verificationMode,
-        reason: 'surname_mismatch',
-        maskedName: `UPSA ID ${normalizedIndex}`,
-        challengeRequired: true,
-        surnameVerified: false,
-      };
-    }
-    const upperSurname = cleanSurname.toUpperCase();
-    VERIFIED_UPSA_STUDENT_CACHE.set(normalizedIndex, upperSurname);
-    return {
-      valid: true,
-      normalizedIndex,
-      verificationMode,
-      studentName: upperSurname,
-      maskedName: maskStudentFullName(upperSurname),
-      surnameHint: getSurnameHint(upperSurname),
-      challengeRequired: false,
-      surnameVerified: true,
-    };
-  }
-
   return {
-    valid: true,
+    valid: false,
     normalizedIndex,
-    verificationMode,
-    maskedName: `UPSA ID ${normalizedIndex}`,
-    challengeRequired: true,
-    surnameVerified: false,
+    verificationMode: 'external_api',
+    reason: 'verification_api_unreachable',
   };
 }
 
@@ -632,17 +601,10 @@ export async function verifyStudentIndexWithApiKey(
   const fetchFn = await getFetchWithProxyFn();
 
   if (isHostelVerifyEndpoint) {
-    const isCooldownActive =
-      !process.env.VITEST &&
-      lastUpstreamFailureAt > 0 &&
-      Date.now() - lastUpstreamFailureAt < UPSTREAM_FAILURE_COOLDOWN_MS;
-
-    if (isCooldownActive) {
-      return evaluateFallbackStudentChallenge(
-        normalizedIndex,
-        trimmedKey ? 'api_key_ready' : 'format_verified',
-        surnameAttempt
-      );
+    // Fast-path: if this student ID was already resolved from the official endpoint,
+    // evaluate the Masked Surname Challenge directly without a duplicate 15s upstream round-trip.
+    if (!process.env.VITEST && VERIFIED_UPSA_STUDENT_CACHE.has(normalizedIndex)) {
+      return evaluateFallbackStudentChallenge(normalizedIndex, 'external_api', surnameAttempt);
     }
 
     try {
@@ -656,12 +618,11 @@ export async function verifyStudentIndexWithApiKey(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: '*/*',
         },
-        timeoutMs: 4500,
+        timeoutMs: 12000,
         proxyUrl: configuredProxy,
       });
 
       if (!response.ok) {
-        lastUpstreamFailureAt = Date.now();
         return evaluateFallbackStudentChallenge(
           normalizedIndex,
           trimmedKey ? 'api_key_ready' : 'format_verified',
@@ -675,7 +636,6 @@ export async function verifyStudentIndexWithApiKey(
         rawText.toLowerCase().includes('please check your student id');
 
       if (isExplicitlyNotFound) {
-        lastUpstreamFailureAt = 0;
         return {
           valid: false,
           normalizedIndex,
@@ -690,7 +650,6 @@ export async function verifyStudentIndexWithApiKey(
         rawText.length === 0;
 
       if (isUpstreamErrorHtml) {
-        lastUpstreamFailureAt = Date.now();
         return evaluateFallbackStudentChallenge(
           normalizedIndex,
           trimmedKey ? 'api_key_ready' : 'format_verified',
@@ -698,7 +657,6 @@ export async function verifyStudentIndexWithApiKey(
         );
       }
 
-      lastUpstreamFailureAt = 0;
       VERIFIED_UPSA_STUDENT_CACHE.set(normalizedIndex, rawText);
       const maskedName = maskStudentFullName(rawText);
       const surnameHint = getSurnameHint(rawText);
@@ -741,7 +699,6 @@ export async function verifyStudentIndexWithApiKey(
         surnameVerified: false,
       };
     } catch {
-      lastUpstreamFailureAt = Date.now();
       return evaluateFallbackStudentChallenge(
         normalizedIndex,
         trimmedKey ? 'api_key_ready' : 'format_verified',
