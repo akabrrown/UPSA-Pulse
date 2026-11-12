@@ -1535,11 +1535,14 @@ export function PulseApp() {
       .catch(() => undefined);
   }, []);
 
+  const lastAutoVerifiedIndexRef = useRef<string>('');
+
   const handleVerifyStudentIndex = useCallback(async (overrideIndex?: string) => {
     const raw = (overrideIndex ?? signupIndexNumber).trim();
     if (!raw || raw.length < 6) return;
     if (indexVerifying) return;
 
+    lastAutoVerifiedIndexRef.current = raw;
     setIndexVerifying(true);
     setAuthError(null);
     setIndexVerifiedBadge(null);
@@ -1564,6 +1567,7 @@ export function PulseApp() {
         }
         setSignupIndexNumber(json.data.normalizedIndex);
         setSignupEmail(`${json.data.normalizedIndex}@st.upsa.edu.gh`);
+        lastAutoVerifiedIndexRef.current = json.data.normalizedIndex;
 
         if (json.data.challengeRequired) {
           setMaskedNameHint(json.data.maskedName ?? null);
@@ -1589,7 +1593,7 @@ export function PulseApp() {
     }
   }, [signupIndexNumber, indexVerifying]);
 
-  // Automatic verification: when user finishes typing a valid UPSA index format
+  // Automatic verification: when user finishes typing a valid UPSA index format (runs once per distinct input)
   useEffect(() => {
     const clean = signupIndexNumber.trim();
     const isCompleteFormat =
@@ -1600,7 +1604,12 @@ export function PulseApp() {
       return;
     }
 
-    if (indexVerifiedBadge || surnameChallengeRequired || indexVerifying) {
+    if (
+      indexVerifiedBadge ||
+      surnameChallengeRequired ||
+      indexVerifying ||
+      lastAutoVerifiedIndexRef.current === clean
+    ) {
       return;
     }
 
@@ -1623,29 +1632,39 @@ export function PulseApp() {
       setAuthError('Enter your legal surname as registered with UPSA (at least 2 characters).');
       return;
     }
-    const res = await fetch('/api/auth/otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        step: 'verify_index',
-        indexNumber: raw,
-        surname,
-      }),
-    });
-    const json = await res.json();
-    if (res.ok && json.success) {
-      if (json.data.valid === false) {
-        setAuthError(json.data.message ?? 'The surname entered does not match university records for this student ID.');
-        setIndexVerifiedBadge(null);
-        setSurnameConfirmed(false);
-        return;
+    setIndexVerifying(true);
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'verify_index',
+          indexNumber: raw,
+          surname,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (json.data.valid === false) {
+          setAuthError(
+            json.data.message ??
+              'The surname entered does not match university records for this student ID.'
+          );
+          setIndexVerifiedBadge(null);
+          setSurnameConfirmed(false);
+          return;
+        }
+        setSurnameConfirmed(true);
+        setSurnameChallengeRequired(false);
+        setIndexVerifiedBadge(`Student ID & Surname Confirmed (${json.data.normalizedIndex})`);
+        setComposeStatusToast('Student ID and legal surname confirmed successfully.');
+      } else {
+        setAuthError(json.error?.message ?? 'Could not verify surname against university records.');
       }
-      setSurnameConfirmed(true);
-      setSurnameChallengeRequired(false);
-      setIndexVerifiedBadge(`Student ID & Surname Confirmed (${json.data.normalizedIndex})`);
-      setComposeStatusToast('Student ID and legal surname confirmed successfully.');
-    } else {
-      setAuthError(json.error?.message ?? 'Could not verify surname against university records.');
+    } catch {
+      setAuthError('Network error while confirming surname.');
+    } finally {
+      setIndexVerifying(false);
     }
   };
 
@@ -2231,6 +2250,7 @@ export function PulseApp() {
                       value={signupIndexNumber}
                       onChange={(e) => {
                         setSignupIndexNumber(e.target.value);
+                        setAuthError(null);
                         setIndexVerifiedBadge(null);
                         setSurnameChallengeRequired(false);
                         setSurnameConfirmed(false);

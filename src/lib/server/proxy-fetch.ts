@@ -51,7 +51,7 @@ export function executeFetchWithProxy(
   options: ProxyFetchOptions = {}
 ): Promise<ProxyFetchResult> {
   const maxRedirects = options.maxRedirects ?? 3;
-  const timeoutMs = options.timeoutMs ?? 8000;
+  const timeoutMs = options.timeoutMs ?? 4500;
   const proxyUrl = normalizeProxyUrl(
     options.proxyUrl?.trim() ||
       process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim() ||
@@ -162,7 +162,7 @@ export async function fetchWithOptionalProxy(
         method: options.method || 'GET',
         headers: options.headers,
         body: options.body,
-        signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
+        signal: AbortSignal.timeout(options.timeoutMs ?? 4500),
       });
       return {
         ok: resp.ok,
@@ -186,7 +186,7 @@ export async function fetchWithOptionalProxy(
         method: options.method || 'GET',
         headers: options.headers,
         body: options.body,
-        signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
+        signal: AbortSignal.timeout(options.timeoutMs ?? 4500),
       });
       return {
         ok: resp.ok,

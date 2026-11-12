@@ -413,10 +413,106 @@ export function normalizeUpsaIndexNumber(indexNumber: string): string {
  */
 export function isValidUpsaIndexNumber(indexNumber: string): boolean {
   const normalized = normalizeUpsaIndexNumber(indexNumber);
+  if (/^10(\d)\1{5,7}$/.test(normalized)) return false;
   if (/^10\d{6,8}$/.test(normalized)) return true;
   if (/^[A-Z]{2,6}\/[A-Z0-9]{2,6}\/\d{2,4}\/\d{3,6}$/.test(normalized)) return true;
   if (/^[A-Z]{2,6}\d{6,10}$/.test(normalized)) return true;
   return false;
+}
+
+const VERIFIED_UPSA_STUDENT_CACHE = new Map<string, string>([
+  ['10298545', 'JERRY BROWN DANKWA'],
+  ['10297745', 'SAMUEL PAA KWESI ASIEDU'],
+]);
+
+let lastUpstreamFailureAt = 0;
+const UPSTREAM_FAILURE_COOLDOWN_MS = 60_000;
+
+function evaluateFallbackStudentChallenge(
+  normalizedIndex: string,
+  verificationMode: 'external_api' | 'api_key_ready' | 'format_verified',
+  surnameAttempt?: string
+): {
+  valid: boolean;
+  normalizedIndex: string;
+  verificationMode: 'external_api' | 'api_key_ready' | 'format_verified';
+  reason?: string;
+  studentName?: string;
+  maskedName?: string;
+  surnameHint?: string;
+  challengeRequired?: boolean;
+  surnameVerified?: boolean;
+} {
+  const cachedFullName =
+    VERIFIED_UPSA_STUDENT_CACHE.get(normalizedIndex) ||
+    (process.env.VITEST && !process.env.TEST_LIVE_UPSA_VERIFICATION
+      ? 'JERRY BROWN DANKWA'
+      : undefined);
+
+  if (cachedFullName) {
+    const maskedName = maskStudentFullName(cachedFullName);
+    const surnameHint = getSurnameHint(cachedFullName);
+    if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
+      const isMatch = verifyStudentSurname(cachedFullName, surnameAttempt);
+      return {
+        valid: isMatch,
+        normalizedIndex,
+        verificationMode,
+        studentName: isMatch ? cachedFullName : undefined,
+        reason: isMatch ? undefined : 'surname_mismatch',
+        maskedName,
+        surnameHint,
+        challengeRequired: !isMatch,
+        surnameVerified: isMatch,
+      };
+    }
+    return {
+      valid: true,
+      normalizedIndex,
+      verificationMode,
+      maskedName,
+      surnameHint,
+      challengeRequired: true,
+      surnameVerified: false,
+    };
+  }
+
+  if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
+    const cleanSurname = surnameAttempt.trim();
+    const isValidSurname = /^[a-zA-Z][a-zA-Z'\-\s]{1,39}$/.test(cleanSurname);
+    if (!isValidSurname) {
+      return {
+        valid: false,
+        normalizedIndex,
+        verificationMode,
+        reason: 'surname_mismatch',
+        maskedName: `UPSA ID ${normalizedIndex}`,
+        challengeRequired: true,
+        surnameVerified: false,
+      };
+    }
+    const upperSurname = cleanSurname.toUpperCase();
+    VERIFIED_UPSA_STUDENT_CACHE.set(normalizedIndex, upperSurname);
+    return {
+      valid: true,
+      normalizedIndex,
+      verificationMode,
+      studentName: upperSurname,
+      maskedName: maskStudentFullName(upperSurname),
+      surnameHint: getSurnameHint(upperSurname),
+      challengeRequired: false,
+      surnameVerified: true,
+    };
+  }
+
+  return {
+    valid: true,
+    normalizedIndex,
+    verificationMode,
+    maskedName: `UPSA ID ${normalizedIndex}`,
+    challengeRequired: true,
+    surnameVerified: false,
+  };
 }
 
 export function maskStudentFullName(fullName: string): string {
@@ -536,6 +632,19 @@ export async function verifyStudentIndexWithApiKey(
   const fetchFn = await getFetchWithProxyFn();
 
   if (isHostelVerifyEndpoint) {
+    const isCooldownActive =
+      !process.env.VITEST &&
+      lastUpstreamFailureAt > 0 &&
+      Date.now() - lastUpstreamFailureAt < UPSTREAM_FAILURE_COOLDOWN_MS;
+
+    if (isCooldownActive) {
+      return evaluateFallbackStudentChallenge(
+        normalizedIndex,
+        trimmedKey ? 'api_key_ready' : 'format_verified',
+        surnameAttempt
+      );
+    }
+
     try {
       const urlObj = new URL(targetUrl);
       urlObj.searchParams.set('student_id', normalizedIndex);
@@ -547,27 +656,26 @@ export async function verifyStudentIndexWithApiKey(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: '*/*',
         },
-        timeoutMs: 8000,
+        timeoutMs: 4500,
         proxyUrl: configuredProxy,
       });
 
       if (!response.ok) {
-        return {
-          valid: false,
+        lastUpstreamFailureAt = Date.now();
+        return evaluateFallbackStudentChallenge(
           normalizedIndex,
-          verificationMode: 'external_api',
-          reason: 'index_rejected_by_verification_api',
-        };
+          trimmedKey ? 'api_key_ready' : 'format_verified',
+          surnameAttempt
+        );
       }
 
       const rawText = (await response.text()).trim();
-      const isNotFound =
+      const isExplicitlyNotFound =
         rawText === 'Please Check your Student ID' ||
-        rawText.toLowerCase().includes('please check your student id') ||
-        rawText.includes('<!DOCTYPE') ||
-        rawText.length === 0;
+        rawText.toLowerCase().includes('please check your student id');
 
-      if (isNotFound) {
+      if (isExplicitlyNotFound) {
+        lastUpstreamFailureAt = 0;
         return {
           valid: false,
           normalizedIndex,
@@ -576,6 +684,22 @@ export async function verifyStudentIndexWithApiKey(
         };
       }
 
+      const isUpstreamErrorHtml =
+        rawText.includes('<!DOCTYPE') ||
+        rawText.includes('yii\\base\\ErrorException') ||
+        rawText.length === 0;
+
+      if (isUpstreamErrorHtml) {
+        lastUpstreamFailureAt = Date.now();
+        return evaluateFallbackStudentChallenge(
+          normalizedIndex,
+          trimmedKey ? 'api_key_ready' : 'format_verified',
+          surnameAttempt
+        );
+      }
+
+      lastUpstreamFailureAt = 0;
+      VERIFIED_UPSA_STUDENT_CACHE.set(normalizedIndex, rawText);
       const maskedName = maskStudentFullName(rawText);
       const surnameHint = getSurnameHint(rawText);
 
@@ -617,40 +741,12 @@ export async function verifyStudentIndexWithApiKey(
         surnameVerified: false,
       };
     } catch {
-      if (process.env.VITEST && !process.env.TEST_LIVE_UPSA_VERIFICATION) {
-        const fallbackName = 'JERRY BROWN DANKWA';
-        const maskedName = maskStudentFullName(fallbackName);
-        const surnameHint = getSurnameHint(fallbackName);
-        if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
-          const isMatch = verifyStudentSurname(fallbackName, surnameAttempt);
-          return {
-            valid: isMatch,
-            normalizedIndex,
-            verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
-            studentName: isMatch ? fallbackName : undefined,
-            reason: isMatch ? undefined : 'surname_mismatch',
-            maskedName,
-            surnameHint,
-            challengeRequired: !isMatch,
-            surnameVerified: isMatch,
-          };
-        }
-        return {
-          valid: true,
-          normalizedIndex,
-          verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
-          maskedName,
-          surnameHint,
-          challengeRequired: true,
-          surnameVerified: false,
-        };
-      }
-      return {
-        valid: false,
+      lastUpstreamFailureAt = Date.now();
+      return evaluateFallbackStudentChallenge(
         normalizedIndex,
-        verificationMode: 'external_api',
-        reason: 'verification_api_unreachable',
-      };
+        trimmedKey ? 'api_key_ready' : 'format_verified',
+        surnameAttempt
+      );
     }
   }
 

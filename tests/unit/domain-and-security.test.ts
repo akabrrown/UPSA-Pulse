@@ -305,6 +305,7 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
       expect(isValidUpsaIndexNumber('12345678')).toBe(false);
       expect(isValidUpsaIndexNumber('99999999')).toBe(false);
       expect(isValidUpsaIndexNumber('55555555')).toBe(false);
+      expect(isValidUpsaIndexNumber('10000000')).toBe(false);
       expect(isValidUpsaIndexNumber('123')).toBe(false);
       expect(isValidUpsaIndexNumber('not-an-index')).toBe(false);
     });
@@ -433,6 +434,40 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
           expect(correct.surnameVerified).toBe(true);
           expect(correct.challengeRequired).toBe(false);
           expect(correct.studentName).toBe('JERRY BROWN DANKWA');
+        } finally {
+          globalThis.fetch = originalFetch;
+        }
+      });
+
+      it('gracefully falls back to surname challenge when upstream hostel server returns HTTP 500 yii ErrorException', async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => {
+          return new Response(
+            'yii\\base\\ErrorException: Trying to access array offset on value of type null',
+            { status: 500 }
+          );
+        }) as typeof fetch;
+
+        try {
+          const challenge = await verifyStudentIndexWithApiKey(
+            '10298545',
+            undefined,
+            'https://apply.upsahostels.com/index.php?r=applications/verify'
+          );
+          expect(challenge.valid).toBe(true);
+          expect(challenge.challengeRequired).toBe(true);
+          expect(challenge.maskedName).toBe('J**** B**** D*****');
+
+          const confirmed = await verifyStudentIndexWithApiKey(
+            '10298545',
+            undefined,
+            'https://apply.upsahostels.com/index.php?r=applications/verify',
+            undefined,
+            'Dankwa'
+          );
+          expect(confirmed.valid).toBe(true);
+          expect(confirmed.surnameVerified).toBe(true);
+          expect(confirmed.challengeRequired).toBe(false);
         } finally {
           globalThis.fetch = originalFetch;
         }
