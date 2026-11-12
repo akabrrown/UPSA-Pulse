@@ -3,6 +3,7 @@ import {
   ensureVapidConfigured,
   sendPushNotificationToSubscription,
   sendPushNotificationToUser,
+  sendPushNotificationToCampusSubscribers,
 } from '@/lib/push/web-push-service';
 import {
   savePushSubscriptionInStore,
@@ -11,6 +12,7 @@ import {
   DEFAULT_DEMO_USER_ID,
 } from '@/lib/store/pulse-store';
 import { POST as postPushTest } from '@/app/api/push/test/route';
+import { GET as getPushSubscribe } from '@/app/api/push/subscribe/route';
 import { NextRequest } from 'next/server';
 
 describe('Web Push Notification Service', () => {
@@ -98,5 +100,63 @@ describe('Web Push Notification Service', () => {
     expect(json.success).toBe(true);
     expect(json.data.delivered).toBe(1);
     expect(json.data.message).toContain('Test alert delivered');
+  });
+
+  it('POST /api/push/test auto-saves inline browser subscription before dispatching', async () => {
+    const req = new NextRequest('http://localhost:3000/api/push/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': testUserId,
+      },
+      body: JSON.stringify({
+        subscription: {
+          endpoint: 'https://push.upsapulse.local/sub/inline-synced-device',
+          p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQ',
+          auth: 'tBHItJI5svbpez7KI4CCXg',
+        },
+      }),
+    });
+
+    const res = await postPushTest(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.delivered).toBe(1);
+  });
+
+  it('GET /api/push/subscribe returns both publicKey and vapidPublicKey', async () => {
+    const res = await getPushSubscribe();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(typeof json.data.publicKey).toBe('string');
+    expect(json.data.vapidPublicKey).toBe(json.data.publicKey);
+    expect(json.data.configured).toBe(true);
+  });
+
+  it('sendPushNotificationToCampusSubscribers notifies other campus users excluding author', async () => {
+    const authorId = '00000000-0000-0000-0000-000000000001';
+    const subscriberId = '00000000-0000-0000-0000-000000000002';
+
+    savePushSubscriptionInStore(authorId, {
+      endpoint: 'https://push.upsapulse.local/sub/author',
+      p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQ',
+      auth: 'tBHItJI5svbpez7KI4CCXg',
+    });
+    savePushSubscriptionInStore(subscriberId, {
+      endpoint: 'https://push.upsapulse.local/sub/student2',
+      p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQ',
+      auth: 'tBHItJI5svbpez7KI4CCXg',
+    });
+
+    const result = await sendPushNotificationToCampusSubscribers(authorId, {
+      title: 'New Campus Ask · UPSA Main Campus',
+      body: 'Does anyone know when the library closes tonight?',
+      url: '/?thread=ask-1',
+    });
+
+    expect(result.delivered).toBe(1);
+    expect(result.failed).toBe(0);
   });
 });

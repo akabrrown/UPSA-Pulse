@@ -15,10 +15,11 @@ export async function POST(
     try {
       const replyInfo = await dbGetReplyAuthor(id);
       if (replyInfo && replyInfo.authorId && replyInfo.authorId !== userId) {
-        void sendPushNotificationToUser(replyInfo.authorId, {
+        await sendPushNotificationToUser(replyInfo.authorId, {
           title: 'Answer Accepted! · UPSA Pulse',
           body: 'Your reply was pinned as the accepted answer on campus.',
           url: `/?thread=${encodeURIComponent(replyInfo.postId)}`,
+          tag: `answer-${id}`,
         });
       }
     } catch (pushErr) {

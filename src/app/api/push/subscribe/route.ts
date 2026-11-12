@@ -11,10 +11,12 @@ import {
 
 export async function GET() {
   const env = getServerEnv();
+  const key = env.VAPID_PUBLIC_KEY || env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   return apiSuccess({
-    publicKey: env.VAPID_PUBLIC_KEY || env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    publicKey: key,
+    vapidPublicKey: key,
     subject: env.VAPID_SUBJECT,
-    configured: Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY),
+    configured: Boolean(key && env.VAPID_PRIVATE_KEY),
   });
 }
 

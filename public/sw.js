@@ -14,7 +14,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(OFFLINE_ASSETS))
+      .then((cache) => cache.addAll(OFFLINE_ASSETS).catch(() => {}))
       .then(() => self.skipWaiting())
   );
 });
@@ -69,6 +69,7 @@ self.addEventListener('push', (event) => {
     title: 'UPSA Pulse',
     body: 'New activity on your campus post.',
     url: '/',
+    tag: undefined,
   };
   if (event.data) {
     try {
@@ -79,12 +80,27 @@ self.addEventListener('push', (event) => {
     }
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/badge-72x72.png',
-      data: { url: payload.url || '/' },
-    })
+    Promise.all([
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge-72x72.png',
+        tag: payload.tag || `upsa-pulse-${Date.now()}`,
+        renotify: true,
+        data: { url: payload.url || '/' },
+      }),
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((windowClients) => {
+          for (const client of windowClients) {
+            client.postMessage({
+              type: 'PUSH_RECEIVED',
+              payload,
+            });
+          }
+        })
+        .catch(() => {}),
+    ])
   );
 });
 

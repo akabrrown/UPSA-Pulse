@@ -1701,6 +1701,12 @@ export function getPushSubscriptionsFromStore(
   return state.pushSubscriptions.filter((s) => s.userId === userId);
 }
 
+export function getAllPushSubscriptionsFromStore(
+  excludeUserId?: string
+): Array<{ id: number; userId: string; endpoint: string; p256dh: string; auth: string; createdAt: string }> {
+  return state.pushSubscriptions.filter((s) => !excludeUserId || s.userId !== excludeUserId);
+}
+
 export function getPostAuthorFromStore(postId: string): string | null {
   const p = state.posts.get(postId);
   return p?.authorId ?? null;

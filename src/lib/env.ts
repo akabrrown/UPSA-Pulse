@@ -32,30 +32,30 @@ const serverEnvSchema = clientEnvSchema.extend({
 
 export function getClientEnv() {
   return clientEnvSchema.parse({
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || undefined,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || undefined,
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || undefined,
   });
 }
 
 export function getServerEnv() {
   return serverEnvSchema.parse({
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    DEVICE_HASH_PEPPER: process.env.DEVICE_HASH_PEPPER,
-    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
-    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
-    ARCJET_KEY: process.env.ARCJET_KEY,
-    VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY,
-    VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
-    VAPID_SUBJECT: process.env.VAPID_SUBJECT,
-    SENTRY_DSN: process.env.SENTRY_DSN,
-    UPSA_INDEX_VERIFICATION_API_KEY: process.env.UPSA_INDEX_VERIFICATION_API_KEY,
-    UPSA_INDEX_VERIFICATION_API_URL: process.env.UPSA_INDEX_VERIFICATION_API_URL,
-    UPSA_INDEX_VERIFICATION_PROXY_URL: process.env.UPSA_INDEX_VERIFICATION_PROXY_URL,
-    ENABLE_UNMASK_WORKFLOW: process.env.ENABLE_UNMASK_WORKFLOW,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || undefined,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || undefined,
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || undefined,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || undefined,
+    DEVICE_HASH_PEPPER: process.env.DEVICE_HASH_PEPPER?.trim() || undefined,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL?.trim() || undefined,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || undefined,
+    ARCJET_KEY: process.env.ARCJET_KEY?.trim() || undefined,
+    VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY?.trim() || undefined,
+    VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY?.trim() || undefined,
+    VAPID_SUBJECT: process.env.VAPID_SUBJECT?.trim() || undefined,
+    SENTRY_DSN: process.env.SENTRY_DSN?.trim() || undefined,
+    UPSA_INDEX_VERIFICATION_API_KEY: process.env.UPSA_INDEX_VERIFICATION_API_KEY?.trim() || undefined,
+    UPSA_INDEX_VERIFICATION_API_URL: process.env.UPSA_INDEX_VERIFICATION_API_URL?.trim() || undefined,
+    UPSA_INDEX_VERIFICATION_PROXY_URL: process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim() || undefined,
+    ENABLE_UNMASK_WORKFLOW: process.env.ENABLE_UNMASK_WORKFLOW?.trim() || undefined,
   });
 }
 

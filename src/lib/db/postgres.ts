@@ -32,6 +32,7 @@ import {
   savePushSubscriptionInStore,
   removePushSubscriptionInStore,
   getPushSubscriptionsFromStore,
+  getAllPushSubscriptionsFromStore,
   getPostAuthorFromStore,
   getReplyAuthorFromStore,
   getAdminConfigFromStore,
@@ -911,11 +912,30 @@ export async function dbSavePushSubscription(
   userId: string,
   sub: { endpoint: string; p256dh: string; auth: string }
 ) {
+  const storeSaved = savePushSubscriptionInStore(userId, sub);
   if (!shouldUseLiveDb()) {
-    return savePushSubscriptionInStore(userId, sub);
+    return storeSaved;
   }
   const client = await getPgPool().connect();
   try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS private.push_subscriptions (
+        id bigint generated always as identity primary key,
+        user_id uuid not null,
+        endpoint text not null unique,
+        p256dh text not null,
+        auth text not null,
+        created_at timestamptz not null default now()
+      )
+    `);
+    if (!sub.endpoint.includes('demo-settings-endpoint') && !sub.endpoint.includes('push.upsapulse.local')) {
+      await client.query(
+        `DELETE FROM private.push_subscriptions
+         WHERE user_id = $1::uuid
+           AND (endpoint LIKE '%demo-settings-endpoint%' OR endpoint LIKE '%push.upsapulse.local%')`,
+        [userId]
+      );
+    }
     const res = await client.query(
       `INSERT INTO private.push_subscriptions (user_id, endpoint, p256dh, auth)
        VALUES ($1::uuid, $2::text, $3::text, $4::text)
@@ -923,15 +943,18 @@ export async function dbSavePushSubscription(
        RETURNING id`,
       [userId, sub.endpoint, sub.p256dh, sub.auth]
     );
-    return { id: Number(res.rows[0]?.id ?? 1) };
+    return { id: Number(res.rows[0]?.id ?? storeSaved.id) };
+  } catch (err) {
+    console.warn('[WebPush DB] Fallback to in-memory subscription store:', err);
+    return { id: storeSaved.id };
   } finally {
     client.release();
   }
 }
 
 export async function dbRemovePushSubscription(userId: string, endpoint: string) {
+  removePushSubscriptionInStore(userId, endpoint);
   if (!shouldUseLiveDb()) {
-    removePushSubscriptionInStore(userId, endpoint);
     return;
   }
   const client = await getPgPool().connect();
@@ -940,6 +963,8 @@ export async function dbRemovePushSubscription(userId: string, endpoint: string)
       `DELETE FROM private.push_subscriptions WHERE user_id = $1::uuid AND endpoint = $2::text`,
       [userId, endpoint]
     );
+  } catch {
+    // Non-fatal if table or row missing
   } finally {
     client.release();
   }
@@ -948,13 +973,14 @@ export async function dbRemovePushSubscription(userId: string, endpoint: string)
 export async function dbGetPushSubscriptionsForUser(
   userId: string
 ): Promise<Array<{ id: number; endpoint: string; p256dh: string; auth: string }>> {
+  const storeSubs = getPushSubscriptionsFromStore(userId).map((s) => ({
+    id: s.id,
+    endpoint: s.endpoint,
+    p256dh: s.p256dh,
+    auth: s.auth,
+  }));
   if (!shouldUseLiveDb()) {
-    return getPushSubscriptionsFromStore(userId).map((s) => ({
-      id: s.id,
-      endpoint: s.endpoint,
-      p256dh: s.p256dh,
-      auth: s.auth,
-    }));
+    return storeSubs;
   }
   const client = await getPgPool().connect();
   try {
@@ -962,12 +988,63 @@ export async function dbGetPushSubscriptionsForUser(
       `SELECT id, endpoint, p256dh, auth FROM private.push_subscriptions WHERE user_id = $1::uuid`,
       [userId]
     );
-    return res.rows.map((r) => ({
+    const dbSubs = res.rows.map((r) => ({
       id: Number(r.id),
       endpoint: String(r.endpoint),
       p256dh: String(r.p256dh),
       auth: String(r.auth),
     }));
+    const seen = new Set(dbSubs.map((s) => s.endpoint));
+    for (const s of storeSubs) {
+      if (!seen.has(s.endpoint)) {
+        dbSubs.push(s);
+        seen.add(s.endpoint);
+      }
+    }
+    return dbSubs;
+  } catch {
+    return storeSubs;
+  } finally {
+    client.release();
+  }
+}
+
+export async function dbGetAllPushSubscriptions(
+  excludeUserId?: string
+): Promise<Array<{ id: number; userId: string; endpoint: string; p256dh: string; auth: string }>> {
+  const storeSubs = getAllPushSubscriptionsFromStore(excludeUserId);
+  if (!shouldUseLiveDb()) {
+    return storeSubs;
+  }
+  const client = await getPgPool().connect();
+  try {
+    const res = excludeUserId
+      ? await client.query(
+          `SELECT id, user_id, endpoint, p256dh, auth
+           FROM private.push_subscriptions
+           WHERE user_id <> $1::uuid`,
+          [excludeUserId]
+        )
+      : await client.query(
+          `SELECT id, user_id, endpoint, p256dh, auth FROM private.push_subscriptions`
+        );
+    const dbSubs = res.rows.map((r) => ({
+      id: Number(r.id),
+      userId: String(r.user_id),
+      endpoint: String(r.endpoint),
+      p256dh: String(r.p256dh),
+      auth: String(r.auth),
+    }));
+    const seen = new Set(dbSubs.map((s) => s.endpoint));
+    for (const s of storeSubs) {
+      if (!seen.has(s.endpoint)) {
+        dbSubs.push(s);
+        seen.add(s.endpoint);
+      }
+    }
+    return dbSubs;
+  } catch {
+    return storeSubs;
   } finally {
     client.release();
   }

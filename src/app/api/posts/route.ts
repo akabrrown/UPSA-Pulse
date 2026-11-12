@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createPostSchema } from '@/lib/validation/schemas';
 import { dbCreatePost } from '@/lib/db/postgres';
+import { sendPushNotificationToCampusSubscribers } from '@/lib/push/web-push-service';
 import { apiError, apiSuccess, getAuthenticatedUserId, mapDomainErrorToResponse } from '@/lib/api-helpers';
 
 export async function POST(req: NextRequest) {
@@ -17,6 +18,22 @@ export async function POST(req: NextRequest) {
 
     const userId = getAuthenticatedUserId(req);
     const created = await dbCreatePost(userId, parsed.data);
+
+    if (created.status === 'published') {
+      try {
+        await sendPushNotificationToCampusSubscribers(userId, {
+          title:
+            created.kind === 'ask'
+              ? `New Campus Ask · ${created.zoneName}`
+              : `New Campus Post · ${created.zoneName}`,
+          body: created.body.slice(0, 90),
+          url: `/?thread=${encodeURIComponent(created.id)}`,
+          tag: `post-${created.id}`,
+        });
+      } catch (pushErr) {
+        console.warn('[WebPush] Error triggering new post push notification:', pushErr);
+      }
+    }
 
     return apiSuccess(
       {

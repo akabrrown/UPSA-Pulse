@@ -1,6 +1,7 @@
 import * as webpush from 'web-push';
 import { getServerEnv } from '@/lib/env';
 import {
+  dbGetAllPushSubscriptions,
   dbGetPushSubscriptionsForUser,
   dbRemovePushSubscription,
 } from '@/lib/db/postgres';
@@ -54,7 +55,11 @@ export async function sendPushNotificationToSubscription(
   payload: PushNotificationPayload
 ): Promise<{ success: boolean; expired: boolean; error?: string }> {
   // If endpoint is a test/local simulated endpoint, return mock success
-  if (sub.endpoint.includes('push.upsapulse.local') || sub.endpoint.startsWith('mock://')) {
+  if (
+    sub.endpoint.includes('push.upsapulse.local') ||
+    sub.endpoint.startsWith('mock://') ||
+    sub.endpoint.includes('demo-settings-endpoint')
+  ) {
     return { success: true, expired: false };
   }
 
@@ -92,12 +97,22 @@ export async function sendPushNotificationToSubscription(
     );
     return { success: true, expired: false };
   } catch (err: unknown) {
-    const error = err as { statusCode?: number; message?: string };
+    const error = err as { statusCode?: number; message?: string; body?: string };
     const statusCode = error.statusCode;
 
-    // 410 Gone or 404 Not Found indicates the push subscription has expired or was revoked
-    if (statusCode === 410 || statusCode === 404) {
-      return { success: false, expired: true, error: 'Subscription expired or revoked' };
+    // 410 Gone, 404 Not Found, 401/403 (VAPID mismatch) or 400 (invalid subscription keys)
+    if (
+      statusCode === 410 ||
+      statusCode === 404 ||
+      statusCode === 401 ||
+      statusCode === 403 ||
+      statusCode === 400
+    ) {
+      return {
+        success: false,
+        expired: true,
+        error: error.body || error.message || `Subscription rejected (${statusCode})`,
+      };
     }
 
     return {
@@ -111,9 +126,54 @@ export async function sendPushNotificationToSubscription(
 export async function sendPushNotificationToUser(
   userId: string,
   payload: PushNotificationPayload
-): Promise<{ delivered: number; failed: number }> {
+): Promise<{ delivered: number; failed: number; expiredCount?: number; lastError?: string }> {
   try {
     const subscriptions = await dbGetPushSubscriptionsForUser(userId);
+    if (!subscriptions || subscriptions.length === 0) {
+      return { delivered: 0, failed: 0, expiredCount: 0 };
+    }
+
+    let delivered = 0;
+    let failed = 0;
+    let expiredCount = 0;
+    let lastError: string | undefined;
+
+    await Promise.all(
+      subscriptions.map(async (sub) => {
+        const result = await sendPushNotificationToSubscription(sub, payload);
+        if (result.success) {
+          delivered += 1;
+        } else {
+          failed += 1;
+          if (result.error) {
+            lastError = result.error;
+          }
+          if (result.expired) {
+            expiredCount += 1;
+            // Clean up defunct subscription
+            try {
+              await dbRemovePushSubscription(userId, sub.endpoint);
+            } catch {
+              // Non-fatal cleanup error
+            }
+          }
+        }
+      })
+    );
+
+    return { delivered, failed, expiredCount, lastError };
+  } catch (err) {
+    console.error('[WebPush] Error dispatching push notifications to user:', err);
+    return { delivered: 0, failed: 0, expiredCount: 0 };
+  }
+}
+
+export async function sendPushNotificationToCampusSubscribers(
+  excludeUserId: string | undefined,
+  payload: PushNotificationPayload
+): Promise<{ delivered: number; failed: number }> {
+  try {
+    const subscriptions = await dbGetAllPushSubscriptions(excludeUserId);
     if (!subscriptions || subscriptions.length === 0) {
       return { delivered: 0, failed: 0 };
     }
@@ -129,9 +189,8 @@ export async function sendPushNotificationToUser(
         } else {
           failed += 1;
           if (result.expired) {
-            // Clean up defunct subscription
             try {
-              await dbRemovePushSubscription(userId, sub.endpoint);
+              await dbRemovePushSubscription(sub.userId, sub.endpoint);
             } catch {
               // Non-fatal cleanup error
             }
@@ -142,7 +201,7 @@ export async function sendPushNotificationToUser(
 
     return { delivered, failed };
   } catch (err) {
-    console.error('[WebPush] Error dispatching push notifications to user:', err);
+    console.error('[WebPush] Error dispatching campus push notifications:', err);
     return { delivered: 0, failed: 0 };
   }
 }

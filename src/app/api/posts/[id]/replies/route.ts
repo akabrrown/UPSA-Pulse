@@ -27,10 +27,11 @@ export async function POST(
       try {
         const postAuthorId = await dbGetPostAuthor(id);
         if (postAuthorId && postAuthorId !== userId) {
-          void sendPushNotificationToUser(postAuthorId, {
+          await sendPushNotificationToUser(postAuthorId, {
             title: 'UPSA Pulse',
             body: `New reply from Student ${reply.aliasNo}: "${parsed.data.body.slice(0, 80)}"`,
             url: `/?thread=${encodeURIComponent(id)}`,
+            tag: `reply-${reply.id}`,
           });
         }
       } catch (pushErr) {
