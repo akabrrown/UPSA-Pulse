@@ -594,6 +594,7 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
           step: 'signup',
           username: 'kwame_upsa',
           indexNumber: '10284912',
+          surname: 'Dankwa',
           password: 'UpsaPulse#2026',
           adultConfirmed: true,
           termsAccepted: true,
@@ -616,6 +617,7 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
         body: {
           step: 'signup',
           indexNumber: '10284913',
+          surname: 'Dankwa',
           password: 'UpsaPulse#2026',
           adultConfirmed: true,
           termsAccepted: true,
@@ -637,6 +639,7 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
           step: 'signup',
           username: 'kwame_upsa',
           indexNumber: '10284912',
+          surname: 'Dankwa',
           password: 'UpsaPulse#2026',
           adultConfirmed: true,
           termsAccepted: true,
@@ -1095,13 +1098,75 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
       const postRes = await postStudentVerify(
         makeReq('http://localhost:3000/api/student/verify', {
           method: 'POST',
-          body: { indexNumber: '10298545' },
+          body: { indexNumber: '10298545', surname: 'Dankwa' },
         })
       );
       expect(postRes.status).toBe(200);
       const postJson = await postRes.json();
       expect(postJson.success).toBe(true);
       expect(postJson.data.valid).toBe(true);
+      expect(postJson.data.surnameVerified).toBe(true);
+    });
+
+    it('enforces the Masked Surname Challenge through /api/auth/otp', async () => {
+      // 1. Initial verify_index: returns masked hint, requires challenge
+      const initRes = await postAuthOtp(
+        makeReq('http://localhost:3000/api/auth/otp', {
+          method: 'POST',
+          body: { step: 'verify_index', indexNumber: '10298545' },
+        })
+      );
+      expect(initRes.status).toBe(200);
+      const initJson = await initRes.json();
+      expect(initJson.data.valid).toBe(true);
+      expect(initJson.data.challengeRequired).toBe(true);
+      expect(initJson.data.maskedName).toBe('J**** B**** D*****');
+      expect(initJson.data.surnameHint).toBe('D');
+
+      // 2. Mismatched surname: rejected
+      const wrongRes = await postAuthOtp(
+        makeReq('http://localhost:3000/api/auth/otp', {
+          method: 'POST',
+          body: { step: 'verify_index', indexNumber: '10298545', surname: 'Quaye' },
+        })
+      );
+      expect(wrongRes.status).toBe(200);
+      const wrongJson = await wrongRes.json();
+      expect(wrongJson.data.valid).toBe(false);
+      expect(wrongJson.data.reason).toBe('surname_mismatch');
+
+      // 3. Correct surname: verified
+      const correctRes = await postAuthOtp(
+        makeReq('http://localhost:3000/api/auth/otp', {
+          method: 'POST',
+          body: { step: 'verify_index', indexNumber: '10298545', surname: 'Dankwa' },
+        })
+      );
+      expect(correctRes.status).toBe(200);
+      const correctJson = await correctRes.json();
+      expect(correctJson.data.valid).toBe(true);
+      expect(correctJson.data.surnameVerified).toBe(true);
+      expect(correctJson.data.challengeRequired).toBe(false);
+
+      // 4. Signup attempt with wrong surname rejected with 400
+      const rejectSignupRes = await postAuthOtp(
+        makeReq('http://localhost:3000/api/auth/otp', {
+          method: 'POST',
+          body: {
+            step: 'signup',
+            indexNumber: '10298545',
+            surname: 'ImpostorSurname',
+            password: 'StrongPassword123!',
+            adultConfirmed: true,
+            termsAccepted: true,
+            privacyAccepted: true,
+            guidelinesAccepted: true,
+          },
+        })
+      );
+      expect(rejectSignupRes.status).toBe(400);
+      const rejectSignupJson = await rejectSignupRes.json();
+      expect(rejectSignupJson.error.code).toBe('surname_mismatch');
     });
   });
 });

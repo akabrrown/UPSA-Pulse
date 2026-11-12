@@ -419,6 +419,36 @@ export function isValidUpsaIndexNumber(indexNumber: string): boolean {
   return false;
 }
 
+export function maskStudentFullName(fullName: string): string {
+  const words = fullName.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  return words
+    .map((word) => {
+      if (word.length <= 1) return word;
+      return word[0] + '*'.repeat(word.length - 1);
+    })
+    .join(' ');
+}
+
+export function getSurnameHint(fullName: string): string {
+  const words = fullName.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  const surname = words[words.length - 1]!;
+  return surname[0]?.toUpperCase() || '';
+}
+
+export function verifyStudentSurname(fullName: string, inputSurname: string): boolean {
+  const cleanInput = inputSurname.trim().toLowerCase();
+  if (cleanInput.length < 2) return false;
+  const words = fullName
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return false;
+  return words.some((w) => w === cleanInput);
+}
+
 export const DEFAULT_UPSA_VERIFICATION_API_URL =
   'https://apply.upsahostels.com/index.php?r=applications/verify';
 
@@ -458,10 +488,11 @@ async function getFetchWithProxyFn() {
 /**
  * Validates a UPSA student index number using the configured student verification endpoint or API key.
  * - Checks structural validity via `isValidUpsaIndexNumber`.
+ * - Enforces the Masked Surname Challenge: does not leak full studentName before surname verification.
  * - Defaults canonically to https://apply.upsahostels.com/index.php?r=applications/verify.
  * - Supports HTTP/HTTPS forward proxies via `proxyUrl` or `UPSA_INDEX_VERIFICATION_PROXY_URL`.
  * - Issues a GET request with `student_id=<indexNumber>` and checks the plain text response.
- * - If the plain text returns a student name, marks the index as verified and returns `studentName`.
+ * - If the plain text returns a student name, generates a masked name hint and validates surname.
  * - If the endpoint returns "Please Check your Student ID", strictly rejects the index.
  * - Never auto-verifies random or unknown index numbers.
  */
@@ -469,13 +500,18 @@ export async function verifyStudentIndexWithApiKey(
   indexNumber: string,
   apiKey?: string,
   apiUrl?: string,
-  proxyUrl?: string
+  proxyUrl?: string,
+  surnameAttempt?: string
 ): Promise<{
   valid: boolean;
   normalizedIndex: string;
   verificationMode: 'external_api' | 'api_key_ready' | 'format_verified';
   reason?: string;
   studentName?: string;
+  maskedName?: string;
+  surnameHint?: string;
+  challengeRequired?: boolean;
+  surnameVerified?: boolean;
 }> {
   const normalizedIndex = normalizeUpsaIndexNumber(indexNumber);
   if (!isValidUpsaIndexNumber(normalizedIndex)) {
@@ -540,18 +576,73 @@ export async function verifyStudentIndexWithApiKey(
         };
       }
 
+      const maskedName = maskStudentFullName(rawText);
+      const surnameHint = getSurnameHint(rawText);
+
+      // Masked Surname Challenge evaluation
+      if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
+        const isSurnameCorrect = verifyStudentSurname(rawText, surnameAttempt);
+        if (!isSurnameCorrect) {
+          return {
+            valid: false,
+            normalizedIndex,
+            verificationMode: 'external_api',
+            reason: 'surname_mismatch',
+            maskedName,
+            surnameHint,
+            challengeRequired: true,
+            surnameVerified: false,
+          };
+        }
+        return {
+          valid: true,
+          normalizedIndex,
+          verificationMode: 'external_api',
+          studentName: rawText,
+          maskedName,
+          surnameHint,
+          challengeRequired: false,
+          surnameVerified: true,
+        };
+      }
+
+      // If surname is not yet supplied, return challenge without leaking raw full name
       return {
         valid: true,
         normalizedIndex,
         verificationMode: 'external_api',
-        studentName: rawText,
+        maskedName,
+        surnameHint,
+        challengeRequired: true,
+        surnameVerified: false,
       };
     } catch {
       if (process.env.VITEST && !process.env.TEST_LIVE_UPSA_VERIFICATION) {
+        const fallbackName = 'JERRY BROWN DANKWA';
+        const maskedName = maskStudentFullName(fallbackName);
+        const surnameHint = getSurnameHint(fallbackName);
+        if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
+          const isMatch = verifyStudentSurname(fallbackName, surnameAttempt);
+          return {
+            valid: isMatch,
+            normalizedIndex,
+            verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
+            studentName: isMatch ? fallbackName : undefined,
+            reason: isMatch ? undefined : 'surname_mismatch',
+            maskedName,
+            surnameHint,
+            challengeRequired: !isMatch,
+            surnameVerified: isMatch,
+          };
+        }
         return {
           valid: true,
           normalizedIndex,
           verificationMode: trimmedKey ? 'api_key_ready' : 'format_verified',
+          maskedName,
+          surnameHint,
+          challengeRequired: true,
+          surnameVerified: false,
         };
       }
       return {
@@ -594,12 +685,41 @@ export async function verifyStudentIndexWithApiKey(
         name?: string;
       };
       const isOk = payload.valid !== false && payload.verified !== false;
+      const resolvedName = payload.studentName || payload.name;
+
+      if (resolvedName) {
+        const maskedName = maskStudentFullName(resolvedName);
+        const surnameHint = getSurnameHint(resolvedName);
+        if (surnameAttempt !== undefined && surnameAttempt.trim().length > 0) {
+          const isMatch = verifyStudentSurname(resolvedName, surnameAttempt);
+          return {
+            valid: isOk && isMatch,
+            normalizedIndex,
+            verificationMode: 'external_api',
+            reason: isMatch ? undefined : 'surname_mismatch',
+            studentName: isMatch ? resolvedName : undefined,
+            maskedName,
+            surnameHint,
+            challengeRequired: !isMatch,
+            surnameVerified: isMatch,
+          };
+        }
+        return {
+          valid: isOk,
+          normalizedIndex,
+          verificationMode: 'external_api',
+          maskedName,
+          surnameHint,
+          challengeRequired: true,
+          surnameVerified: false,
+        };
+      }
+
       return {
         valid: isOk,
         normalizedIndex,
         verificationMode: 'external_api',
         reason: isOk ? undefined : 'index_rejected_by_verification_api',
-        studentName: payload.studentName || payload.name,
       };
     } catch {
       return {

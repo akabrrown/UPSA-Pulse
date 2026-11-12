@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
 
     if (body.step === 'verify_index') {
       const rawIndex = typeof body.indexNumber === 'string' ? body.indexNumber.trim() : '';
+      const surname = typeof body.surname === 'string' ? body.surname.trim() : undefined;
       if (!rawIndex) {
         return apiSuccess({
           valid: false,
@@ -48,19 +49,30 @@ export async function POST(req: NextRequest) {
         rawIndex,
         env.UPSA_INDEX_VERIFICATION_API_KEY,
         env.UPSA_INDEX_VERIFICATION_API_URL,
-        env.UPSA_INDEX_VERIFICATION_PROXY_URL
+        env.UPSA_INDEX_VERIFICATION_PROXY_URL,
+        surname
       );
       if (!check.valid) {
         return apiSuccess({
           valid: false,
           reason: check.reason ?? 'invalid_index_number',
+          maskedName: check.maskedName,
+          surnameHint: check.surnameHint,
+          challengeRequired: check.challengeRequired ?? false,
           message:
             check.reason === 'invalid_index_format'
               ? 'Invalid UPSA student ID format. UPSA student IDs are 8 digits starting with 10 (e.g. 10298545).'
-              : 'UPSA student index number not found on university records. Please check your student ID and try again.',
+              : check.reason === 'surname_mismatch'
+                ? `Surname does not match university records for ID ${check.normalizedIndex}. Please enter your exact legal surname.`
+                : 'UPSA student index number not found on university records. Please check your student ID and try again.',
         });
       }
-      return apiSuccess(check);
+      return apiSuccess({
+        ...check,
+        message: check.challengeRequired
+          ? `Student ID located. Please confirm your legal surname to prove ownership.`
+          : `Student ID & surname confirmed for ${check.normalizedIndex}.`,
+      });
     }
 
     if (body.step === 'check_username') {
@@ -118,14 +130,20 @@ export async function POST(req: NextRequest) {
         parsed.data.indexNumber,
         env.UPSA_INDEX_VERIFICATION_API_KEY,
         env.UPSA_INDEX_VERIFICATION_API_URL,
-        env.UPSA_INDEX_VERIFICATION_PROXY_URL
+        env.UPSA_INDEX_VERIFICATION_PROXY_URL,
+        parsed.data.surname
       );
-      if (!indexCheck.valid) {
+      if (!indexCheck.valid || indexCheck.challengeRequired) {
         return apiError(
-          indexCheck.reason ?? 'invalid_index_number',
-          indexCheck.reason === 'invalid_index_format'
-            ? 'Invalid UPSA student ID format. UPSA student IDs are 8 digits starting with 10 (e.g. 10298545).'
-            : 'UPSA student index number not found on university records. Please check your student ID and try again.',
+          indexCheck.reason ??
+            (indexCheck.challengeRequired ? 'surname_challenge_required' : 'invalid_index_number'),
+          indexCheck.reason === 'surname_mismatch'
+            ? 'The surname entered does not match university records for this student ID.'
+            : indexCheck.challengeRequired
+              ? 'You must confirm your legal surname before creating an account with this student ID.'
+              : indexCheck.reason === 'invalid_index_format'
+                ? 'Invalid UPSA student ID format. UPSA student IDs are 8 digits starting with 10 (e.g. 10298545).'
+                : 'UPSA student index number not found on university records. Please check your student ID and try again.',
           400
         );
       }

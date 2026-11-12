@@ -11,6 +11,10 @@ export async function GET(req: NextRequest) {
       searchParams.get('indexNumber') ||
       searchParams.get('index_number') ||
       '';
+    const surname =
+      searchParams.get('surname') ||
+      searchParams.get('last_name') ||
+      undefined;
 
     const wantsText =
       searchParams.get('format') === 'text' ||
@@ -36,7 +40,8 @@ export async function GET(req: NextRequest) {
       studentId.trim(),
       env.UPSA_INDEX_VERIFICATION_API_KEY,
       env.UPSA_INDEX_VERIFICATION_API_URL,
-      env.UPSA_INDEX_VERIFICATION_PROXY_URL
+      env.UPSA_INDEX_VERIFICATION_PROXY_URL,
+      surname
     );
 
     if (wantsText) {
@@ -80,6 +85,12 @@ export async function POST(req: NextRequest) {
           : typeof body.index_number === 'string'
             ? body.index_number.trim()
             : '';
+    const surname =
+      typeof body.surname === 'string'
+        ? body.surname.trim()
+        : typeof body.last_name === 'string'
+          ? body.last_name.trim()
+          : undefined;
 
     if (!studentId) {
       return apiError(
@@ -94,7 +105,8 @@ export async function POST(req: NextRequest) {
       studentId,
       env.UPSA_INDEX_VERIFICATION_API_KEY,
       env.UPSA_INDEX_VERIFICATION_API_URL,
-      env.UPSA_INDEX_VERIFICATION_PROXY_URL
+      env.UPSA_INDEX_VERIFICATION_PROXY_URL,
+      surname
     );
 
     const wantsText =
@@ -129,3 +141,4 @@ export async function POST(req: NextRequest) {
     return mapDomainErrorToResponse(err);
   }
 }
+

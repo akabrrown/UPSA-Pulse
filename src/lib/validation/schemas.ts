@@ -65,6 +65,12 @@ export const studentSignUpSchema = z.object({
     .trim()
     .min(6, 'Enter your UPSA student index number')
     .max(24, 'Index number is too long'),
+  surname: z
+    .string()
+    .trim()
+    .min(2, 'Enter your legal surname as shown on your student ID')
+    .max(64)
+    .optional(),
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters')

@@ -18,6 +18,9 @@ import {
   resetRateLimitsForTests,
   isValidUpsaIndexNumber,
   verifyStudentIndexWithApiKey,
+  maskStudentFullName,
+  getSurnameHint,
+  verifyStudentSurname,
 } from '@/lib/domain/pulse-engine';
 import {
   signUpConsentSchema,
@@ -323,7 +326,9 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
         const found = await verifyStudentIndexWithApiKey(
           '10298545',
           undefined,
-          'https://apply.upsahostels.com/index.php?r=applications/verify'
+          'https://apply.upsahostels.com/index.php?r=applications/verify',
+          undefined,
+          'Dankwa'
         );
         expect(found.valid).toBe(true);
         expect(found.studentName).toBe('JERRY BROWN DANKWA');
@@ -349,7 +354,8 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
           '10298545',
           undefined,
           'https://apply.upsahostels.com/index.php?r=applications/verify',
-          'http://proxy.campus.internal:8080'
+          'http://proxy.campus.internal:8080',
+          'Dankwa'
         );
         expect(proxyVerified.valid).toBe(true);
         expect(proxyVerified.studentName).toBe('JERRY BROWN DANKWA');
@@ -361,6 +367,76 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
     it('handles proxy fetch configuration module cleanly', async () => {
       const { fetchWithOptionalProxy } = await import('@/lib/server/proxy-fetch');
       expect(typeof fetchWithOptionalProxy).toBe('function');
+    });
+
+    describe('Masked Surname Challenge (Impersonation Protection)', () => {
+      it('masks full names and extracts surname hints without leaking full identity', () => {
+        expect(maskStudentFullName('JERRY BROWN DANKWA')).toBe('J**** B**** D*****');
+        expect(maskStudentFullName('GILBERT MATSI')).toBe('G****** M****');
+        expect(maskStudentFullName('A B')).toBe('A B');
+        expect(getSurnameHint('JERRY BROWN DANKWA')).toBe('D');
+        expect(getSurnameHint('GILBERT MATSI')).toBe('M');
+      });
+
+      it('verifies student surname case-insensitively against university records', () => {
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'Dankwa')).toBe(true);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'dankwa')).toBe(true);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'DANKWA')).toBe(true);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'Brown')).toBe(true);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'Jerry')).toBe(true);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'Mensah')).toBe(false);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', '')).toBe(false);
+        expect(verifyStudentSurname('JERRY BROWN DANKWA', 'D')).toBe(false); // Min 2 chars
+      });
+
+      it('requires surname confirmation before granting full verification on index check', async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => {
+          return new Response('JERRY BROWN DANKWA', { status: 200 });
+        }) as typeof fetch;
+
+        try {
+          // 1. Without surname: returns masked challenge, does not reveal full studentName
+          const initial = await verifyStudentIndexWithApiKey(
+            '10298545',
+            undefined,
+            'https://apply.upsahostels.com/index.php?r=applications/verify'
+          );
+          expect(initial.valid).toBe(true);
+          expect(initial.challengeRequired).toBe(true);
+          expect(initial.surnameVerified).toBe(false);
+          expect(initial.maskedName).toBe('J**** B**** D*****');
+          expect(initial.surnameHint).toBe('D');
+          expect(initial.studentName).toBeUndefined();
+
+          // 2. With wrong surname attempt: strictly rejected
+          const wrong = await verifyStudentIndexWithApiKey(
+            '10298545',
+            undefined,
+            'https://apply.upsahostels.com/index.php?r=applications/verify',
+            undefined,
+            'Asare'
+          );
+          expect(wrong.valid).toBe(false);
+          expect(wrong.surnameVerified).toBe(false);
+          expect(wrong.reason).toBe('surname_mismatch');
+
+          // 3. With correct surname: verified
+          const correct = await verifyStudentIndexWithApiKey(
+            '10298545',
+            undefined,
+            'https://apply.upsahostels.com/index.php?r=applications/verify',
+            undefined,
+            'Dankwa'
+          );
+          expect(correct.valid).toBe(true);
+          expect(correct.surnameVerified).toBe(true);
+          expect(correct.challengeRequired).toBe(false);
+          expect(correct.studentName).toBe('JERRY BROWN DANKWA');
+        } finally {
+          globalThis.fetch = originalFetch;
+        }
+      });
     });
   });
 

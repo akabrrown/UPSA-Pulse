@@ -185,6 +185,11 @@ export function PulseApp() {
   const [authMode, setAuthMode] = useState<'signup' | 'login' | 'forgot'>('signup');
   const [usernameTakenError, setUsernameTakenError] = useState<string | null>(null);
   const [signupIndexNumber, setSignupIndexNumber] = useState<string>('');
+  const [signupSurname, setSignupSurname] = useState<string>('');
+  const [surnameChallengeRequired, setSurnameChallengeRequired] = useState<boolean>(false);
+  const [maskedNameHint, setMaskedNameHint] = useState<string | null>(null);
+  const [surnameInitialHint, setSurnameInitialHint] = useState<string | null>(null);
+  const [surnameConfirmed, setSurnameConfirmed] = useState<boolean>(false);
   const [signupPassword, setSignupPassword] = useState<string>('');
   const [showSignupPassword, setShowSignupPassword] = useState<boolean>(false);
   const [signupEmail, setSignupEmail] = useState<string>('');
@@ -1242,6 +1247,8 @@ export function PulseApp() {
   const handleVerifyStudentIndex = async () => {
     setAuthError(null);
     setIndexVerifiedBadge(null);
+    setSurnameConfirmed(false);
+    setSurnameChallengeRequired(false);
     const raw = signupIndexNumber.trim();
     if (!raw) {
       setAuthError('Enter your UPSA student index number first (e.g. 10284912).');
@@ -1268,15 +1275,61 @@ export function PulseApp() {
       }
       setSignupIndexNumber(json.data.normalizedIndex);
       setSignupEmail(`${json.data.normalizedIndex}@st.upsa.edu.gh`);
+
+      if (json.data.challengeRequired) {
+        setMaskedNameHint(json.data.maskedName ?? null);
+        setSurnameInitialHint(json.data.surnameHint ?? null);
+        setSurnameChallengeRequired(true);
+        setSurnameConfirmed(false);
+        setIndexVerifiedBadge(null);
+        return;
+      }
+
+      setSurnameConfirmed(true);
+      setSurnameChallengeRequired(false);
       setIndexVerifiedBadge(
-        json.data.studentName
-          ? `Verified: ${json.data.studentName} (${json.data.normalizedIndex})`
-          : json.data.verificationMode === 'external_api' || json.data.verificationMode === 'api_key_ready'
-          ? `Verified via UPSA Index API (${json.data.normalizedIndex})`
-          : `UPSA Index Verified (${json.data.normalizedIndex})`
+        `Student ID & Surname Confirmed (${json.data.normalizedIndex})`
       );
     } else {
       setAuthError(json.error?.message ?? 'Could not verify UPSA index number.');
+    }
+  };
+
+  const handleConfirmSurname = async () => {
+    setAuthError(null);
+    const raw = signupIndexNumber.trim();
+    const surname = signupSurname.trim();
+    if (!raw) {
+      setAuthError('Enter your UPSA student index number first.');
+      return;
+    }
+    if (!surname || surname.length < 2) {
+      setAuthError('Enter your legal surname as registered with UPSA (at least 2 characters).');
+      return;
+    }
+    const res = await fetch('/api/auth/otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'verify_index',
+        indexNumber: raw,
+        surname,
+      }),
+    });
+    const json = await res.json();
+    if (res.ok && json.success) {
+      if (json.data.valid === false) {
+        setAuthError(json.data.message ?? 'The surname entered does not match university records for this student ID.');
+        setIndexVerifiedBadge(null);
+        setSurnameConfirmed(false);
+        return;
+      }
+      setSurnameConfirmed(true);
+      setSurnameChallengeRequired(false);
+      setIndexVerifiedBadge(`Student ID & Surname Confirmed (${json.data.normalizedIndex})`);
+      setComposeStatusToast('Student ID and legal surname confirmed successfully.');
+    } else {
+      setAuthError(json.error?.message ?? 'Could not verify surname against university records.');
     }
   };
 
@@ -1292,8 +1345,12 @@ export function PulseApp() {
       setAuthError('Enter your valid UPSA student index number.');
       return;
     }
-    if (!indexVerifiedBadge) {
-      setAuthError('Please click "Verify" to validate your student index number on university records.');
+    if (surnameChallengeRequired && !surnameConfirmed) {
+      setAuthError('Please confirm your legal surname before creating your account.');
+      return;
+    }
+    if (!indexVerifiedBadge || !surnameConfirmed) {
+      setAuthError('Please click "Verify" and confirm your legal surname to validate your student ID.');
       return;
     }
     if (pwd.length < 8) {
@@ -1313,6 +1370,7 @@ export function PulseApp() {
         body: JSON.stringify({
           step: 'signup',
           indexNumber: idx,
+          surname: signupSurname.trim() || undefined,
           password: pwd,
           email: signupEmail.trim() || undefined,
           adultConfirmed,
@@ -1858,6 +1916,10 @@ export function PulseApp() {
                       onChange={(e) => {
                         setSignupIndexNumber(e.target.value);
                         setIndexVerifiedBadge(null);
+                        setSurnameChallengeRequired(false);
+                        setSurnameConfirmed(false);
+                        setMaskedNameHint(null);
+                        setSurnameInitialHint(null);
                       }}
                       className="w-full min-h-[44px] px-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[15px] font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
                     />
@@ -1870,6 +1932,50 @@ export function PulseApp() {
                     Verify
                   </button>
                 </div>
+                {surnameChallengeRequired && !surnameConfirmed && (
+                  <div className="p-3.5 rounded-[8px] bg-[#FEF6E7] dark:bg-[#342407]/40 border border-[#D9A21B]/40 space-y-2.5">
+                    <div className="flex items-center gap-1.5 text-[13px] font-bold text-[#8A6200] dark:text-[#E0A824]">
+                      <ShieldAlert className="w-4 h-4 shrink-0" />
+                      <span>Security Challenge: Confirm Surname</span>
+                    </div>
+                    <p className="text-[12px] leading-[17px] text-[var(--text-secondary)]">
+                      To prevent unauthorized registration with your student ID, confirm your legal surname as recorded with UPSA:
+                    </p>
+                    <div className="flex items-center gap-2 text-[12px] bg-[var(--surface-card)] px-3 py-1.5 rounded-[6px] border border-[var(--border-color)]">
+                      <span className="text-[var(--text-secondary)]">Student Record:</span>
+                      <span className="font-mono font-bold tracking-wider text-[var(--text-heading)]">{maskedNameHint}</span>
+                      {surnameInitialHint && (
+                        <span className="text-[#8A6200] font-semibold text-[11px]">(Surname starts with &ldquo;{surnameInitialHint}&rdquo;)</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        id="signup-surname-confirm"
+                        type="text"
+                        placeholder="Enter your legal Surname / Last Name"
+                        value={signupSurname}
+                        onChange={(e) => {
+                          setSignupSurname(e.target.value);
+                          setAuthError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleConfirmSurname();
+                          }
+                        }}
+                        className="w-full min-h-[44px] px-3.5 rounded-[8px] border border-[var(--border-color)] bg-[var(--surface-app)] text-[14px] focus:outline-none focus:ring-2 focus:ring-[#0B2A5B]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmSurname()}
+                        className="min-h-[44px] px-4 rounded-[8px] bg-[#0B2A5B] text-white text-[13px] font-semibold shrink-0 hover:bg-[#13376E] transition-colors cursor-pointer"
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {indexVerifiedBadge ? (
                   <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#1F7A4D] bg-[#E8F5E9] dark:bg-[#133824]/40 px-2.5 py-1.5 rounded-[6px]">
                     <ShieldCheck className="w-4 h-4 shrink-0 text-[#1F7A4D]" />
