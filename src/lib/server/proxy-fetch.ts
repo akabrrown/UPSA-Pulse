@@ -20,6 +20,29 @@ export interface ProxyFetchResult {
 }
 
 /**
+ * Normalizes proxy strings into standard `http://user:pass@host:port` URLs.
+ * Supports both standard URI format (`http://user:pass@host:port`) and
+ * Webshare raw format (`host:port:user:pass`, e.g. `45.38.107.97:6014:user:pass`).
+ */
+export function normalizeProxyUrl(raw?: string): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  const parts = trimmed.split(':');
+  if (parts.length === 4) {
+    const [host, port, user, pass] = parts;
+    return `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`;
+  }
+  if (parts.length === 2) {
+    const [host, port] = parts;
+    return `http://${host}:${port}`;
+  }
+  return `http://${trimmed}`;
+}
+
+/**
  * Executes an HTTP or HTTPS request using an HTTP/HTTPS proxy agent if configured.
  * Follows redirects (301, 302, 303, 307, 308) up to `maxRedirects`.
  */
@@ -29,11 +52,12 @@ export function executeFetchWithProxy(
 ): Promise<ProxyFetchResult> {
   const maxRedirects = options.maxRedirects ?? 3;
   const timeoutMs = options.timeoutMs ?? 8000;
-  const proxyUrl =
+  const proxyUrl = normalizeProxyUrl(
     options.proxyUrl?.trim() ||
-    process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim() ||
-    process.env.HTTPS_PROXY?.trim() ||
-    process.env.HTTP_PROXY?.trim();
+      process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim() ||
+      process.env.HTTPS_PROXY?.trim() ||
+      process.env.HTTP_PROXY?.trim()
+  );
 
   return new Promise((resolve, reject) => {
     function makeRequest(currentUrl: string, redirectsRemaining: number) {
@@ -123,11 +147,14 @@ export async function fetchWithOptionalProxy(
   urlStr: string,
   options: ProxyFetchOptions = {}
 ): Promise<ProxyFetchResult> {
-  const proxyUrl =
-    options.proxyUrl?.trim() ||
-    process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim() ||
-    process.env.HTTPS_PROXY?.trim() ||
-    process.env.HTTP_PROXY?.trim();
+  const explicitProxy = options.proxyUrl?.trim();
+  const envProxy =
+    process.env.VITEST && !process.env.TEST_LIVE_UPSA_VERIFICATION
+      ? undefined
+      : process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim() ||
+        process.env.HTTPS_PROXY?.trim() ||
+        process.env.HTTP_PROXY?.trim();
+  const proxyUrl = normalizeProxyUrl(explicitProxy || envProxy);
 
   if (!proxyUrl && typeof globalThis.fetch === 'function') {
     try {
@@ -144,12 +171,30 @@ export async function fetchWithOptionalProxy(
       };
     } catch (err) {
       if (typeof window === 'undefined') {
-        return executeFetchWithProxy(urlStr, options);
+        return executeFetchWithProxy(urlStr, { ...options, proxyUrl: undefined });
       }
       throw err;
     }
   }
 
-  return executeFetchWithProxy(urlStr, options);
+  try {
+    return await executeFetchWithProxy(urlStr, { ...options, proxyUrl });
+  } catch (proxyErr) {
+    // Graceful fallback to direct fetch if proxy node times out or drops connection
+    if (typeof globalThis.fetch === 'function') {
+      const resp = await globalThis.fetch(urlStr, {
+        method: options.method || 'GET',
+        headers: options.headers,
+        body: options.body,
+        signal: AbortSignal.timeout(options.timeoutMs ?? 8000),
+      });
+      return {
+        ok: resp.ok,
+        status: resp.status,
+        text: () => resp.text(),
+      };
+    }
+    throw proxyErr;
+  }
 }
 
