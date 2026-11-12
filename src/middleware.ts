@@ -82,7 +82,7 @@ export function middleware(request: NextRequest) {
   const response = NextResponse.next();
 
   // 4. Hardened Security Headers & Content Security Policy (CSP)
-  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-Frame-Options', 'SAMEORIGIN');
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set(
@@ -93,10 +93,21 @@ export function middleware(request: NextRequest) {
     'Permissions-Policy',
     'camera=(), microphone=(), geolocation=(self)'
   );
-  response.headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; form-action 'self'; base-uri 'self';"
-  );
+
+  const cspDirectives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live",
+    "img-src 'self' data: blob: https: https://vercel.live https://vercel.com",
+    "font-src 'self' data: https://fonts.gstatic.com https://vercel.live https://assets.vercel.com",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* http://localhost:* https://vercel.live wss://*.pusher.com https://*.pusher.com",
+    "frame-src 'self' https://vercel.live",
+    "frame-ancestors 'self' https://vercel.live",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+
+  response.headers.set('Content-Security-Policy', cspDirectives);
 
   return response;
 }
