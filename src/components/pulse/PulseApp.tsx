@@ -1416,7 +1416,7 @@ export function PulseApp() {
     try {
       const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
       if (res.ok) {
-        setFeedPosts((prev) => prev.filter((p) => p.id !== postId));
+        setPosts((prev) => prev.filter((p) => p.id !== postId));
         if (activeThreadId === postId) {
           await handleLeaveThread('feed');
         }

@@ -33,11 +33,11 @@ export function normalizeProxyUrl(raw?: string): string | undefined {
   const parts = trimmed.split(':');
   if (parts.length === 4) {
     const [host, port, user, pass] = parts;
-    return `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`;
+    return `http://${encodeURIComponent(user ?? '')}:${encodeURIComponent(pass ?? '')}@${host ?? ''}:${port ?? ''}`;
   }
   if (parts.length === 2) {
     const [host, port] = parts;
-    return `http://${host}:${port}`;
+    return `http://${host ?? ''}:${port ?? ''}`;
   }
   return `http://${trimmed}`;
 }
