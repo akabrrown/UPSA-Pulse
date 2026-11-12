@@ -27,6 +27,8 @@ import { GET as getAdminAudit } from '@/app/api/admin/audit/route';
 import { POST as postAdminActionAlias } from '@/app/api/admin/action/route';
 import { GET as getAdminCaseLookupAlias } from '@/app/api/admin/case-lookup/route';
 import { POST as postAdminAppealDecide, PATCH as patchAdminAppealDecide } from '@/app/api/admin/appeals/route';
+import { GET as getStudentVerify, POST as postStudentVerify } from '@/app/api/student/verify/route';
+import { GET as getApplicationsVerify } from '@/app/api/applications/verify/route';
 import { applyModerationActionInStore } from '@/lib/store/pulse-store';
 import { resetRateLimitsForTests } from '@/lib/domain/pulse-engine';
 
@@ -1057,6 +1059,50 @@ describe('HTTP Route Handlers End-to-End Verification', () => {
 
     const unreadCount = notifsAfter.filter((n) => !n.readAt).length;
     expect(unreadCount).toBe(0);
+  });
+
+  describe('Student Index Verification Proxy Endpoints', () => {
+    it('handles student ID verification proxy requests in both JSON and plain-text modes', async () => {
+      // 1. JSON mode via /api/student/verify
+      const jsonRes = await getStudentVerify(
+        makeReq('http://localhost:3000/api/student/verify?student_id=10298545')
+      );
+      expect(jsonRes.status).toBe(200);
+      const jsonBody = await jsonRes.json();
+      expect(jsonBody.success).toBe(true);
+      expect(jsonBody.data.valid).toBe(true);
+      expect(jsonBody.data.normalizedIndex).toBe('10298545');
+
+      // 2. Upstream compatibility plain-text mode via /api/applications/verify
+      const textRes = await getApplicationsVerify(
+        makeReq('http://localhost:3000/api/applications/verify?r=applications/verify&student_id=10298545')
+      );
+      expect(textRes.status).toBe(200);
+      const textBody = await textRes.text();
+      expect(typeof textBody).toBe('string');
+      expect(textBody.length).toBeGreaterThan(0);
+
+      // 3. Invalid format rejection
+      const invalidRes = await getStudentVerify(
+        makeReq('http://localhost:3000/api/student/verify?student_id=99999999')
+      );
+      expect(invalidRes.status).toBe(200);
+      const invalidJson = await invalidRes.json();
+      expect(invalidJson.data.valid).toBe(false);
+      expect(invalidJson.data.reason).toBe('invalid_index_format');
+
+      // 4. POST JSON verification
+      const postRes = await postStudentVerify(
+        makeReq('http://localhost:3000/api/student/verify', {
+          method: 'POST',
+          body: { indexNumber: '10298545' },
+        })
+      );
+      expect(postRes.status).toBe(200);
+      const postJson = await postRes.json();
+      expect(postJson.success).toBe(true);
+      expect(postJson.data.valid).toBe(true);
+    });
   });
 });
 

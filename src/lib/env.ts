@@ -23,6 +23,7 @@ const serverEnvSchema = clientEnvSchema.extend({
   SENTRY_DSN: z.string().optional(),
   UPSA_INDEX_VERIFICATION_API_KEY: z.string().optional(),
   UPSA_INDEX_VERIFICATION_API_URL: z.string().optional(),
+  UPSA_INDEX_VERIFICATION_PROXY_URL: z.string().optional(),
   ENABLE_UNMASK_WORKFLOW: z
     .enum(['true', 'false'])
     .default('false')
@@ -53,6 +54,7 @@ export function getServerEnv() {
     SENTRY_DSN: process.env.SENTRY_DSN,
     UPSA_INDEX_VERIFICATION_API_KEY: process.env.UPSA_INDEX_VERIFICATION_API_KEY,
     UPSA_INDEX_VERIFICATION_API_URL: process.env.UPSA_INDEX_VERIFICATION_API_URL,
+    UPSA_INDEX_VERIFICATION_PROXY_URL: process.env.UPSA_INDEX_VERIFICATION_PROXY_URL,
     ENABLE_UNMASK_WORKFLOW: process.env.ENABLE_UNMASK_WORKFLOW,
   });
 }

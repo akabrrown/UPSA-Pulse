@@ -422,10 +422,44 @@ export function isValidUpsaIndexNumber(indexNumber: string): boolean {
 export const DEFAULT_UPSA_VERIFICATION_API_URL =
   'https://apply.upsahostels.com/index.php?r=applications/verify';
 
+async function getFetchWithProxyFn() {
+  if (typeof window === 'undefined') {
+    try {
+      const mod = await import('@/lib/server/proxy-fetch');
+      return mod.fetchWithOptionalProxy;
+    } catch {
+      // Fallback to standard fetch
+    }
+  }
+  return async (
+    url: string,
+    opts?: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+      timeoutMs?: number;
+      proxyUrl?: string;
+    }
+  ) => {
+    const res = await fetch(url, {
+      method: opts?.method || 'GET',
+      headers: opts?.headers,
+      body: opts?.body,
+      signal: AbortSignal.timeout(opts?.timeoutMs ?? 8000),
+    });
+    return {
+      ok: res.ok,
+      status: res.status,
+      text: () => res.text(),
+    };
+  };
+}
+
 /**
  * Validates a UPSA student index number using the configured student verification endpoint or API key.
  * - Checks structural validity via `isValidUpsaIndexNumber`.
  * - Defaults canonically to https://apply.upsahostels.com/index.php?r=applications/verify.
+ * - Supports HTTP/HTTPS forward proxies via `proxyUrl` or `UPSA_INDEX_VERIFICATION_PROXY_URL`.
  * - Issues a GET request with `student_id=<indexNumber>` and checks the plain text response.
  * - If the plain text returns a student name, marks the index as verified and returns `studentName`.
  * - If the endpoint returns "Please Check your Student ID", strictly rejects the index.
@@ -434,7 +468,8 @@ export const DEFAULT_UPSA_VERIFICATION_API_URL =
 export async function verifyStudentIndexWithApiKey(
   indexNumber: string,
   apiKey?: string,
-  apiUrl?: string
+  apiUrl?: string,
+  proxyUrl?: string
 ): Promise<{
   valid: boolean;
   normalizedIndex: string;
@@ -454,23 +489,30 @@ export async function verifyStudentIndexWithApiKey(
 
   const trimmedKey = apiKey?.trim();
   const targetUrl = apiUrl?.trim() || DEFAULT_UPSA_VERIFICATION_API_URL;
+  const configuredProxy = proxyUrl?.trim() || process.env.UPSA_INDEX_VERIFICATION_PROXY_URL?.trim();
 
   const isHostelVerifyEndpoint =
-    targetUrl.includes('applications/verify') || targetUrl.includes('upsahostels.com');
+    targetUrl.includes('applications/verify') ||
+    targetUrl.includes('upsahostels.com') ||
+    targetUrl.includes('student_id') ||
+    !trimmedKey;
+
+  const fetchFn = await getFetchWithProxyFn();
 
   if (isHostelVerifyEndpoint) {
     try {
       const urlObj = new URL(targetUrl);
       urlObj.searchParams.set('student_id', normalizedIndex);
 
-      const response = await fetch(urlObj.toString(), {
+      const response = await fetchFn(urlObj.toString(), {
         method: 'GET',
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: '*/*',
         },
-        signal: AbortSignal.timeout(8000),
+        timeoutMs: 8000,
+        proxyUrl: configuredProxy,
       });
 
       if (!response.ok) {
@@ -523,7 +565,7 @@ export async function verifyStudentIndexWithApiKey(
 
   if (trimmedKey && targetUrl) {
     try {
-      const response = await fetch(targetUrl, {
+      const response = await fetchFn(targetUrl, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -531,7 +573,8 @@ export async function verifyStudentIndexWithApiKey(
           authorization: `Bearer ${trimmedKey}`,
         },
         body: JSON.stringify({ indexNumber: normalizedIndex }),
-        signal: AbortSignal.timeout(8000),
+        timeoutMs: 8000,
+        proxyUrl: configuredProxy,
       });
 
       if (!response.ok) {
@@ -543,7 +586,8 @@ export async function verifyStudentIndexWithApiKey(
         };
       }
 
-      const payload = (await response.json()) as {
+      const text = await response.text();
+      const payload = JSON.parse(text) as {
         valid?: boolean;
         verified?: boolean;
         studentName?: string;

@@ -16,6 +16,21 @@ const cspHeader = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  async rewrites() {
+    return [
+      {
+        source: '/index.php',
+        has: [
+          {
+            type: 'query',
+            key: 'r',
+            value: 'applications/verify',
+          },
+        ],
+        destination: '/api/applications/verify',
+      },
+    ];
+  },
   async headers() {
     return [
       {

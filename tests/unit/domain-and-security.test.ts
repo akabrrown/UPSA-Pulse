@@ -343,9 +343,24 @@ describe('UPSA Pulse Core Domain & Security Engine (RED/GREEN TDD)', () => {
         const randomInvalid = await verifyStudentIndexWithApiKey('99999999');
         expect(randomInvalid.valid).toBe(false);
         expect(randomInvalid.reason).toBe('invalid_index_format');
+
+        // Proxy configuration parameter routing
+        const proxyVerified = await verifyStudentIndexWithApiKey(
+          '10298545',
+          undefined,
+          'https://apply.upsahostels.com/index.php?r=applications/verify',
+          'http://proxy.campus.internal:8080'
+        );
+        expect(proxyVerified.valid).toBe(true);
+        expect(proxyVerified.studentName).toBe('JERRY BROWN DANKWA');
       } finally {
         globalThis.fetch = originalFetch;
       }
+    });
+
+    it('handles proxy fetch configuration module cleanly', async () => {
+      const { fetchWithOptionalProxy } = await import('@/lib/server/proxy-fetch');
+      expect(typeof fetchWithOptionalProxy).toBe('function');
     });
   });
 

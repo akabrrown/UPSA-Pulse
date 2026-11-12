@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
       const check = await verifyStudentIndexWithApiKey(
         rawIndex,
         env.UPSA_INDEX_VERIFICATION_API_KEY,
-        env.UPSA_INDEX_VERIFICATION_API_URL
+        env.UPSA_INDEX_VERIFICATION_API_URL,
+        env.UPSA_INDEX_VERIFICATION_PROXY_URL
       );
       if (!check.valid) {
         return apiSuccess({
@@ -116,7 +117,8 @@ export async function POST(req: NextRequest) {
       const indexCheck = await verifyStudentIndexWithApiKey(
         parsed.data.indexNumber,
         env.UPSA_INDEX_VERIFICATION_API_KEY,
-        env.UPSA_INDEX_VERIFICATION_API_URL
+        env.UPSA_INDEX_VERIFICATION_API_URL,
+        env.UPSA_INDEX_VERIFICATION_PROXY_URL
       );
       if (!indexCheck.valid) {
         return apiError(
@@ -196,7 +198,8 @@ export async function POST(req: NextRequest) {
         const indexCheck = await verifyStudentIndexWithApiKey(
           parsed.data.indexNumber,
           env.UPSA_INDEX_VERIFICATION_API_KEY,
-          env.UPSA_INDEX_VERIFICATION_API_URL
+          env.UPSA_INDEX_VERIFICATION_API_URL,
+          env.UPSA_INDEX_VERIFICATION_PROXY_URL
         );
         if (!indexCheck.valid) {
           return apiError(
