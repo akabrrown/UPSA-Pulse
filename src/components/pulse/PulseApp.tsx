@@ -194,6 +194,7 @@ export function PulseApp() {
   const [showSignupPassword, setShowSignupPassword] = useState<boolean>(false);
   const [signupEmail, setSignupEmail] = useState<string>('');
   const [indexVerifiedBadge, setIndexVerifiedBadge] = useState<string | null>(null);
+  const [indexVerifying, setIndexVerifying] = useState<boolean>(false);
   const [loginIdentifier, setLoginIdentifier] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
@@ -1244,56 +1245,81 @@ export function PulseApp() {
       .catch(() => undefined);
   }, []);
 
-  const handleVerifyStudentIndex = async () => {
+  const handleVerifyStudentIndex = useCallback(async (overrideIndex?: string) => {
+    const raw = (overrideIndex ?? signupIndexNumber).trim();
+    if (!raw || raw.length < 6) return;
+    if (indexVerifying) return;
+
+    setIndexVerifying(true);
     setAuthError(null);
     setIndexVerifiedBadge(null);
     setSurnameConfirmed(false);
     setSurnameChallengeRequired(false);
-    const raw = signupIndexNumber.trim();
-    if (!raw) {
-      setAuthError('Enter your UPSA student index number first (e.g. 10284912).');
+
+    try {
+      const res = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: 'verify_index',
+          indexNumber: raw,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        if (json.data.valid === false) {
+          setAuthError(json.data.message ?? 'Could not verify UPSA index number.');
+          setIndexVerifiedBadge(null);
+          return;
+        }
+        setSignupIndexNumber(json.data.normalizedIndex);
+        setSignupEmail(`${json.data.normalizedIndex}@st.upsa.edu.gh`);
+
+        if (json.data.challengeRequired) {
+          setMaskedNameHint(json.data.maskedName ?? null);
+          setSurnameInitialHint(json.data.surnameHint ?? null);
+          setSurnameChallengeRequired(true);
+          setSurnameConfirmed(false);
+          setIndexVerifiedBadge(null);
+          return;
+        }
+
+        setSurnameConfirmed(true);
+        setSurnameChallengeRequired(false);
+        setIndexVerifiedBadge(
+          `Student ID & Surname Confirmed (${json.data.normalizedIndex})`
+        );
+      } else {
+        setAuthError(json.error?.message ?? 'Could not verify UPSA index number.');
+      }
+    } catch {
+      setAuthError('Network error while checking university records.');
+    } finally {
+      setIndexVerifying(false);
+    }
+  }, [signupIndexNumber, indexVerifying]);
+
+  // Automatic verification: when user finishes typing a valid UPSA index format
+  useEffect(() => {
+    const clean = signupIndexNumber.trim();
+    const isCompleteFormat =
+      /^10\d{6,8}$/.test(clean) ||
+      (/^[A-Z0-9/]{8,}$/i.test(clean) && clean.length >= 8);
+
+    if (!isCompleteFormat) {
       return;
     }
-    if (raw.length < 6) {
-      setAuthError('UPSA student index number must be at least 6 characters.');
+
+    if (indexVerifiedBadge || surnameChallengeRequired || indexVerifying) {
       return;
     }
-    const res = await fetch('/api/auth/otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        step: 'verify_index',
-        indexNumber: raw,
-      }),
-    });
-    const json = await res.json();
-    if (res.ok && json.success) {
-      if (json.data.valid === false) {
-        setAuthError(json.data.message ?? 'Could not verify UPSA index number.');
-        setIndexVerifiedBadge(null);
-        return;
-      }
-      setSignupIndexNumber(json.data.normalizedIndex);
-      setSignupEmail(`${json.data.normalizedIndex}@st.upsa.edu.gh`);
 
-      if (json.data.challengeRequired) {
-        setMaskedNameHint(json.data.maskedName ?? null);
-        setSurnameInitialHint(json.data.surnameHint ?? null);
-        setSurnameChallengeRequired(true);
-        setSurnameConfirmed(false);
-        setIndexVerifiedBadge(null);
-        return;
-      }
+    const timer = setTimeout(() => {
+      void handleVerifyStudentIndex(clean);
+    }, 450);
 
-      setSurnameConfirmed(true);
-      setSurnameChallengeRequired(false);
-      setIndexVerifiedBadge(
-        `Student ID & Surname Confirmed (${json.data.normalizedIndex})`
-      );
-    } else {
-      setAuthError(json.error?.message ?? 'Could not verify UPSA index number.');
-    }
-  };
+    return () => clearTimeout(timer);
+  }, [signupIndexNumber, indexVerifiedBadge, surnameChallengeRequired, indexVerifying, handleVerifyStudentIndex]);
 
   const handleConfirmSurname = async () => {
     setAuthError(null);
@@ -1926,10 +1952,18 @@ export function PulseApp() {
                   </div>
                   <button
                     type="button"
+                    disabled={indexVerifying}
                     onClick={() => void handleVerifyStudentIndex()}
-                    className="min-h-[44px] px-4 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] transition-colors cursor-pointer"
+                    className="min-h-[44px] px-4 rounded-[8px] bg-[#DCE6F5] text-[#0B2A5B] text-[13px] font-semibold shrink-0 hover:bg-[#c8daf2] transition-colors cursor-pointer disabled:opacity-60 inline-flex items-center gap-1.5"
                   >
-                    Verify
+                    {indexVerifying ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Checking…</span>
+                      </>
+                    ) : (
+                      <span>Verify</span>
+                    )}
                   </button>
                 </div>
                 {surnameChallengeRequired && !surnameConfirmed && (
@@ -1981,9 +2015,14 @@ export function PulseApp() {
                     <ShieldCheck className="w-4 h-4 shrink-0 text-[#1F7A4D]" />
                     <span>{indexVerifiedBadge}</span>
                   </div>
+                ) : indexVerifying ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-[#0B2A5B] dark:text-[#93B4E8]">
+                    <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-[#0B2A5B]" />
+                    <span>Checking university records automatically…</span>
+                  </div>
                 ) : (
                   <p className="text-[11px] text-[var(--text-secondary)]">
-                    Validated against the official UPSA student registry. Index numbers are salt-hashed and never visible on campus feeds.
+                    Validated automatically against the official UPSA student registry. Index numbers are salt-hashed and never visible on campus feeds.
                   </p>
                 )}
               </div>
